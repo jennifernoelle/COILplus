@@ -39,7 +39,7 @@ source(paste0(source_path, 'PredictInteractions_function.R'))
 source(paste0(source_path, 'GetPredLatFac_function.R'))
 source(paste0(source_path, 'GetPredWeights_function.R'))
 source(paste0(source_path, 'Utils_OccurP.R'))
-source(paste0(source_path, 'MCMC_function_working.R'))
+source(paste0(source_path, 'MCMC_function.R'))
 
 library(parallel)
 library(foreach)
@@ -52,7 +52,7 @@ load(paste0(data_path_raw, 'Cu_phylo.dat'))
 load(paste0(data_path_raw, 'Cv_phylo.dat'))
 load(paste0(data_path_processed, 'A_obs.dat'))
 load(paste0(data_path_processed, 'F_obs.dat'))
-load(paste0(data_path_raw, 'Obs_X.dat')) # mammal traits
+load(paste0(data_path_raw, 'Obs_X.dat')) # vertebrate traits
 load(paste0(data_path_raw, 'Obs_W.dat')) # plant traits
 load(paste0(data_path_processed, 'OP_full.dat')) # site level obs plants
 load(paste0(data_path_processed, 'OV_full.dat')) # site level obs verts

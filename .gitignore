@@ -1,4 +1,10 @@
-.Rproj.user
+# RStudio and R session files
+.Rproj.user/
 .Rhistory
 .RData
 .Ruserdata
+
+# Output and log files
+*.out
+*.Rout
+*.sh
