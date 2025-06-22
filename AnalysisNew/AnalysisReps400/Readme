@@ -1,0 +1,3 @@
+# This folder includes code to rerun the important scenarios 400 samples saving occurrence indicators (not done previously)
+# Also includes fixed CV code to run CV for the blocked/unblocked scenarios which were previously the same due to a typo
+  # Unblocked is default so i think that's what was running before

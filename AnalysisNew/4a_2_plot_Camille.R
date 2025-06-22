@@ -1,0 +1,607 @@
+# File to plot results for cv and full run
+
+# --------- TO DO: set  your directories and name the current results files using the date ---------#
+
+# The directory where the analysis is performed: should already be your WD if you cloned the repo
+#wd_path <- '/Users/camilledesisto/Documents/GitHub/African-Frugivory'
+#wd_path <- "/home/grad/jnk21/projects/African-Frugivory-V2"
+# wd_path<- "/hpc/group/dunsonlab/jkampe/African-Frugivory-V3"
+# setwd(wd_path)
+
+# Save results using convention: res_date_i.rda
+
+# date <- 'p0_A4_old_400sims'
+# date <- 'p75_A4_old_400sims'
+# date <- 'p75_B4_nb_400sims'
+# date <- 'p75_C4_b_400sims'
+# date <- 'pd_A4_old_400sims'
+# date <- 'pd_B4_nb_400sims'
+# date <- 'pd_C4_b_400sims'
+
+sampleP <- FALSE
+
+# Where the raw data are saved:
+data_path_raw <- 'RawDataNew/'
+# Where the processed data are saved:
+data_path <- 'ProcessedDataNew/'
+# Where you want to save MCMC results:
+results_path <- paste0('ResultsNew/', date, '/')
+# Where the functions are available:
+source_path <- 'HelperScriptsJKNew/'
+save_path <- 'ResultsNew/Gabon/'
+
+
+# ------ STEP 0: Some functions. --------- #
+
+
+# We want the github version of superheat
+if(!("superheat" %in% rownames(installed.packages()))){
+  install.packages("devtools")
+  remotes::install_github("rlbarter/superheat")
+}
+
+library(ggplot2)
+library(RColorBrewer)
+library(gplots)
+library(superheat)
+library(abind)
+library(gridExtra)
+library(grid)
+library(dplyr)
+library(caret)
+library(pROC)
+library(bayesplot)
+library(tidyverse)
+
+# Loading the data:
+load(paste0(data_path, 'Cu_phylo.dat'))
+load(paste0(data_path, 'Cv_phylo.dat'))
+load(paste0(data_path, 'A_obs.dat'))
+load(paste0(data_path, 'F_obs.dat'))
+load(paste0(data_path, 'Obs_X.dat')) # mammal traits
+load(paste0(data_path, 'Obs_W.dat')) # plant traits
+load(paste0(data_path, 'OP_full.dat')) # site level obs plants
+load(paste0(data_path, 'OV_full.dat')) # site level obs verts
+
+# Supplementary data on species:
+v.taxa <- read.csv(paste0(data_path, 'v_taxa.csv'))
+p.taxa <- read.csv(paste0(data_path, 'p_taxa.csv'))
+
+# Species list for Gabon
+v.gabon <- read.csv(paste0(data_path_raw, 'frugivores_gabon.csv'))[,2]
+p.gabon <- read.csv(paste0(data_path_raw, 'plants_gabon.csv'))[,2]
+p.gabon <- paste(str_split_i(p.gabon, pattern = " ", i = 1), 
+                 str_split_i(p.gabon, pattern = " ", i = 2), sep = "_")
+
+# Rename for convenience
+Cu <- Cu_phylo
+Cv <- Cv_phylo
+obs_W <- Obs_W
+obs_X <- Obs_X
+obs_A <- A_obs
+obs_F <- F_obs
+
+# Check for consistency
+sum(v.taxa$Animal_Species_Corrected != rownames(obs_A))
+sum(p.taxa$Plant_Species_Corrected != colnames(obs_A))
+
+sum(!(v.gabon %in% rownames(obs_A)))
+sum(!(p.gabon %in% colnames(obs_A)))
+
+# Define a useful function
+loadRData <- function(fileName){
+  #loads an RData file, and returns it
+  load(fileName)
+  get(ls()[ls() != "fileName"])
+}
+
+## The following assignments were used in creating obs_OP
+# Same study: 1, same site: 0.75
+# Same country and habitat: 0.5, same region and habitat: 0.45, same habitat only: 0.25,
+# Same country not habitat: 0.1, same region not habitat: 0.05
+
+## Improved guess: Expert 1 modified
+# Same study: 1, same site: 0.75 -> 0.85
+# Same country and habitat: 0.5 -> 0.65, same region and habitat: 0.45 -> 0.35, same habitat only: 0.25,
+# Same country not habitat: 0.1, same region not habitat: 0.05 
+
+## Improved default guess: 0.75/1
+O_P <- ifelse(O_P == 1, 1, 0.75)
+O_V <- ifelse(O_V == 1, 1, 0.75)
+
+# Getting the combined network for the interactions recorded in any study
+comb_A <- apply(obs_A, c(1, 2), sum)
+comb_A <- (comb_A > 0) * 1
+
+# Useful values
+nP <- ncol(obs_A)
+nV <- nrow(obs_A)
+nS <- dim(obs_A)[3]
+s.names <- dimnames(obs_A)[[3]]
+
+
+# -------------- STEP 1: Specifications. ------------ #
+
+# Number of chains for the full sample runs
+nchains <- 4
+
+# Number of cross validation repetitions:
+repetitions <- 10
+
+# Number of cv samples per repetition
+n.cv <- 100
+
+# --------------- STEP 1: Getting the results together - full sample  ----------------- #
+
+
+
+### Put all chains together in a list
+all_res <- NULL
+for (ii in 1 : nchains) {
+  cat("\n Chain = ", ii)
+  res <- loadRData(paste0(results_path, 'res_',  date, '_', ii, '.dat')) 
+  cat(" Dim is ", dim(res[[1]]))
+  all_res[[ii]] <- res
+}
+
+### Bind together predicted interactions and detection probabilities 
+
+# Number of posterior samples used:
+use_Nsims <- dim(all_res[[1]]$all_pred)[1]
+
+# Creating an array to bind results across chains:
+pred_ours <- array(NA, dim = c(nchains * use_Nsims, nV, nP))
+p_occ_p <- array(NA, dim = c(nchains, nP, nS))
+p_occ_v <- array(NA, dim = c(nchains, nV, nS))
+p_accept_p <- array(NA, dim = c(nchains, nP, nS)) 
+p_accept_v <- array(NA, dim = c(nchains, nV, nS))
+
+for (ii in 1 : nchains) {
+  # Using the posterior samples of the L matrix:
+  pred_ours[1 : use_Nsims + use_Nsims * (ii - 1), , ] <- all_res[[ii]]$all_pred[, , , 1] # this is the imputed L's from the model output (included bias corr)
+  #raw_probs[1 : use_Nsims + use_Nsims * (ii - 1), , ] <- all_res[[ii]]$all_pred[, , , 2] # these are the raw probs, we don't use, I'm just debugging
+  
+  if(sampleP){
+    p_occ_p[ii, , ] <- all_res[[ii]]$occ_plants[[1]] 
+    p_accept_p[ii, , ] <- all_res[[ii]]$occ_plants[[2]]
+    p_occ_v[ii, , ] <- all_res[[ii]]$occ_verts[[1]] 
+    p_accept_v[ii, , ] <- all_res[[ii]]$occ_verts[[2]]
+  }
+}
+
+dimnames(pred_ours)[2 : 3] <- list(vertebrate = rownames(obs_A), plant = colnames(obs_A))
+dimnames(p_occ_p)[2:3] <- list(plant = colnames(obs_A), dimnames(obs_A)[[3]])
+dimnames(p_occ_v)[2:3] <- list(vert = rownames(obs_A), dimnames(obs_A)[[3]])
+
+# Calculating the posterior means across mcmc iterations:
+mean_pred <- mean_pred_na <- apply(pred_ours, c(2, 3), mean)
+#mean_prob_raw <- apply(raw_probs, c(2, 3), mean) # just for debugging
+mean_p_occ_v <- apply(p_occ_v, c(2,3), mean)
+mean_p_occ_p <- apply(p_occ_p, c(2,3), mean)
+mean_accept_v <- apply(p_accept_v, c(2,3), mean)
+mean_accept_p <- apply(p_accept_p, c(2,3), mean)
+
+# Debugging occurrence probs 
+mean(mean_p_occ_p[O_P ==1])
+mean(mean_p_occ_v[O_V ==1])
+c1 <- p_occ_p[1,,]
+mean(c1[O_P==1])
+c2 <- p_occ_p[2,,]
+mean(c2[O_P==1])
+
+# Creating an array to bind results across chains:
+pred_ours <- array(NA, dim = c(nchains * use_Nsims, nV, nP))
+#raw_probs <- array(NA, dim = c(nchains * use_Nsims, nV, nP))
+# p_occ_p <- array(NA, dim = c(nchains, nP, nS))
+# p_occ_v <- array(NA, dim = c(nchains, nV, nS))
+# p_accept_p <- array(NA, dim = c(nchains, nP, nS)) 
+# p_accept_v <- array(NA, dim = c(nchains, nV, nS))
+
+for (ii in 1 : nchains) {
+  # Using the posterior samples of the L matrix:
+  pred_ours[1 : use_Nsims + use_Nsims * (ii - 1), , ] <- all_res[[ii]]$all_pred[, , , 1] # this is the imputed L's from the model output (included bias corr)
+  #raw_probs[1 : use_Nsims + use_Nsims * (ii - 1), , ] <- all_res[[ii]]$all_pred[, , , 2] # these are the raw probs, we don't use, I'm just debugging
+}
+
+#---------------------- Subset to the Gabon species --------------------------#
+
+# Subset observed data for Gabon, but keep ordering
+keep_vs <- which(rownames(obs_A) %in% v.gabon)
+keep_ps <- which(colnames(obs_A) %in% p.gabon)
+
+v.taxa.g <- v.taxa[keep_vs,]
+p.taxa.g <- p.taxa[keep_ps,]
+
+v.g.names <- rownames(obs_A)[keep_vs]
+p.g.names <- colnames(obs_A)[keep_ps]
+nV.g <- length(v.g.names)
+nP.g <- length(p.g.names)
+
+pred_ours <- pred_ours[ ,keep_vs, keep_ps]
+dimnames(pred_ours)[2:3] <- list(vertebrate = v.g.names, plant = p.g.names)
+comb_A <- comb_A[keep_vs, keep_ps]
+
+#dimnames(pred_ours)[2 : 3] <- list(vertebrate = rownames(obs_A), plant = colnames(obs_A))
+# dimnames(p_occ_p)[2:3] <- list(plant = colnames(obs_A), dimnames(obs_A)[[3]])
+# dimnames(p_occ_v)[2:3] <- list(vert = rownames(obs_A), dimnames(obs_A)[[3]])
+
+# Calculating the posterior means across mcmc iterations:
+mean_pred <- mean_pred_na <- apply(pred_ours, c(2, 3), mean)
+#mean_prob_raw <- apply(raw_probs, c(2, 3), mean) # just for debugging
+# mean_p_occ_v <- apply(p_occ_v, c(2,3), mean)
+# mean_p_occ_p <- apply(p_occ_p, c(2,3), mean)
+# mean_accept_v <- apply(p_accept_v, c(2,3), mean)
+# mean_accept_p <- apply(p_accept_p, c(2,3), mean)
+# 
+# # Debugging occurrence probs 
+# mean(mean_p_occ_p[O_P ==1])
+# mean(mean_p_occ_v[O_V ==1])
+# c1 <- p_occ_p[1,,]
+# mean(c1[O_P==1])
+# c2 <- p_occ_p[2,,]
+# mean(c2[O_P==1])
+
+# Setting the recorded interactions to NA (so that they don't overpower the colors)
+mean_pred_na[comb_A == 1] <- NA
+
+
+#-------------------- SANITY CHECK: occurrences -----------------------------#
+
+
+
+#-------------------- SANITY CHECK: interactions -----------------------------#
+
+# Note that because post prob is taken to be the mean across posterior samples of L
+# Zero values are possible when the number of posterior samples is relativley low
+# And unique values are limited to multiples of 1/n_samples
+mean(mean_pred)
+summary(c(mean_pred))
+#summary(c(mean_prob_raw))
+#sort(c(mean_prob_raw))[1000] # Small but nonzero 
+sort(c(mean_pred))[1000] # Might be actually zero: plausible given small number of post samples
+
+
+# Check: model should be outputting 1 whenever there is a known interaction 
+sum(comb_A)
+sum(mean_pred == 1)
+mean(mean_pred[comb_A == 1])
+
+write.csv(mean_pred, paste0(save_path,"post_network", date, ".csv"))
+
+sum(comb_A) # observed interactions
+sum(comb_A) /length(comb_A)
+sum(mean_pred_na > 0.5, na.rm = TRUE) # likely non-observed interactions
+sum(mean_pred_na > 0.75, na.rm = TRUE) # v likely non-observed interactions
+
+sum(mean_pred > 0.5) # observed and unobserved likely interactions
+sum(mean_pred > 0.5)/length(mean_pred)
+sum(mean_pred_na > 0.5, na.rm = TRUE) # likely non-observed interactions
+sum(mean_pred_na > 0.5, na.rm = TRUE)/sum(!(is.na(mean_pred_na))) # predicted prevalence among non-observed interactions
+
+sum(mean_pred > 0.75) # observed and unobserved of v likely interactions
+sum(mean_pred > 0.75)/length(mean_pred)
+sum(mean_pred_na > 0.75, na.rm = TRUE) # v likely non-observed interactions
+sum(mean_pred_na > 0.75, na.rm = TRUE)/sum(!(is.na(mean_pred_na))) # predicted prevalence among non-observed interactions
+
+#png(file = paste0(results_path, "Histogram", date, ".png"))
+hist(c(mean_pred), main = paste0("African Frugivory fit ", date), 
+     xlab = "Posterior Interaction Probability")
+abline(v = mean(mean_pred))
+#dev.off()
+
+
+# --------------- STEP 3: Cross validation results ----------------- #
+
+# Getting the results together (held out indicies and predictions)
+all_indices <- array(NA, dim = c(repetitions, n.cv, 2)) # stores all n.cv CV indices
+gabon_indices <- list()
+our_preds <- array(NA, dim = c(repetitions, nV, nP)) # stores all post probs
+our_preds_gabon <- array(NA, dim = c(repetitions, nV.g, nP)) # consider only interactions where at least the animal is in Gabon
+for (rr in 1 : repetitions) {
+  # Extract all CV indices and relevant post preds
+  cv_indices <- loadRData(paste0(results_path, 'cv_indices_', date, '_', rr, '.dat'))
+  pred <- loadRData(paste0(results_path, 'pred_', date, '_', rr, '.dat'))
+  all_indices[rr, , ] <- cv_indices
+  our_preds[rr, , ] <- pred
+  
+  # Now subset to Gabon: keep if at least the animal was found in Gabon
+  keep_cv_vs <- which(cv_indices[,1] %in% keep_vs) 
+  gabon_indices[[rr]] <- cv_indices[keep_cv_vs,]
+  our_preds_gabon[rr,,] <- pred[keep_vs,]
+}
+
+
+# Exploration with the various options for first CV fold
+thing1 <- all_indices[1,,]
+keep_cv_vs <- which(thing1[,1] %in% keep_vs) # 66 holdouts where animal is found in Gabon
+keep_cv_ps <- which(thing1[,2] %in% keep_ps) # 53 holdouts where plant is found in Gabon
+keep_cv <- intersect(keep_cv_vs, keep_cv_ps) # 37 holdouts where plant and animal are found in Gabon
+
+
+# Predictions of the held out data from model: variable number of gabon-relevant of the 100 indices held out each time - always interactions
+#pred <- array(NA, dim = c(repetitions, n.cv)) # store just the CV preds
+pred_gabon <- list() # Now we have to use a list becausae different number of CVs each rep
+for (rr in 1 : repetitions) {
+  n.cv.rr <- nrow(gabon_indices[[rr]])
+  preds.rr <- rep(NA, n.cv.rr)
+  for (ii in 1 : n.cv.rr) {
+    preds.rr[ii] <- our_preds[rr, gabon_indices[[rr]][ii, 1], gabon_indices[[rr]][ii, 2]]
+    #pred[rr, ii] <- our_preds[rr, all_indices[rr, ii, 1], all_indices[rr, ii, 2]]
+  }
+  pred_gabon[[rr]] <- preds.rr
+}
+
+# Average and median probability of interaction based on the overall data with Gabon animals
+overall_mean <- cbind(apply(our_preds_gabon, 1, mean))
+overall_median <- cbind(apply(our_preds_gabon, 1, median))
+
+# Average and median in the held out known interaction data.
+pred_mean <- unlist(lapply(pred_gabon, mean))
+pred_median <- unlist(lapply(pred_gabon, median))
+
+# Pseudo precision: 
+mean(pred_mean/overall_mean)
+mean(pred_median/overall_median)
+
+# Pseudo accuracy: 
+#mean(pred_mean)
+sum(unlist(pred_gabon)>0.5)/length((unlist(pred_gabon))) # what proportion of true interactions are predicted as "likely" >0.5
+sum(unlist(pred_gabon)>0.75)/length((unlist(pred_gabon))) # what proportion of true interactions are predicted as "v likely" >0.75
+
+# Creating the data frame we will plot:
+plot_dta <- data.frame(value = rbind(pred_mean / overall_mean, pred_median / overall_median), 
+                       stat = rep(c('Pred:Overall (mean)', 'Pred:Overall (median)'), repetitions))
+
+# Plotting cross validation results:
+png(filename = paste0(results_path, "cv_res_", date, ".png"))
+ggplot(data = plot_dta) +
+  geom_boxplot(aes(x = stat, y = value)) +
+  theme_bw() +
+  ylab('') +
+  xlab('') +
+  ggtitle('Out of sample performance', subtitle = date) +
+  theme(legend.position = 'none') +
+  scale_y_continuous(limits = function(x) c(0.9, x[2]), n.breaks = 6) + 
+  theme(text = element_text(size = 20))
+dev.off()
+
+
+
+# ----------- STEP 2: PLOTTING THE HEATMAP --------------------#
+
+# Creating the clusters that will be used
+# The following two lines specify that horizontal and vertical lines in our
+# plot will separate species by taxonomic families:
+v_group <- v.taxa.g$Animal_Family
+p_group <- p.taxa.g$Plant_Family
+
+# Calculating the size of each cluster, will be used when plotting results
+# for families of certain size:
+v_size_cluster <- sapply(unique(v_group), function(x) sum(v_group == x))
+p_size_cluster <- sapply(unique(p_group), function(x) sum(p_group == x))
+
+# Set plot_pred to pred_ours for results based on our method 
+plot_pred <- mean_pred_na
+
+# Set the minimum cluster size that should be plotted. For the results of the
+# manuscript, we set min_bird_size to 10, and min_plant_size to 20. Setting both
+# to 0 will produce the full results.
+min_v_size <- 5
+min_p_size <- 5
+
+keep_p_groups <- names(which(p_size_cluster >= min_p_size))
+keep_v_groups <- names(which(v_size_cluster >= min_v_size))
+
+keep_v_index <- which(v_group %in% keep_v_groups)
+keep_p_index <- which(p_group %in% keep_p_groups)
+
+
+# Plotting those with minimum size as specified:
+# We replaced observed interactions with black NA
+png(paste0(results_path, "heatmap_", date, ".png"), width = 1000, height =1000)
+superheat(X = plot_pred[keep_v_index, keep_p_index],
+          membership.rows = v_group[keep_v_index],
+          membership.cols = p_group[keep_p_index],
+          grid.hline.col = "#00257D", grid.vline.col = '#00257D',
+          grid.hline.size = 0.3, grid.vline.size = 0.3,
+          bottom.label.text.angle = 90,
+          left.label.text.size = 3,
+          bottom.label.text.size = 3,
+          bottom.label.size = 0.2, left.label.size = 0.12,
+          #legend.breaks = seq(0, 1, by = 0.2),
+          #legend.vspace = 0.05,
+          heat.col.scheme = "grey", heat.na.col = 'black',
+          heat.pal.values = seq(0, 1, by = 0.05), 
+          title = paste0("Post Probs: ", date), 
+          #left.label.text.size = 20, 
+          #bottom.label.text.size = 20, 
+          title.size = 10)
+dev.off()
+
+
+# Plot observed network no plant legend
+comb_A_na <- ifelse(comb_A ==1, NA, 0)
+#png(paste0(results_path, "Figures/heatmap_observed.png"), width = 1000, height = 510)
+superheat(X = comb_A[keep_v_index, keep_p_index],
+          membership.rows = v_group[keep_v_index],
+          membership.cols = p_group[keep_p_index],
+          grid.hline.col = "#00257D", grid.vline.col = '#00257D',
+          grid.hline.size = 0.3, grid.vline.size = 0.3,
+          bottom.label.text.angle = 90,
+          left.label.text.size = 3,
+          bottom.label.text.size = 3,
+          bottom.label.size = 0.2, left.label.size = 0.12,
+          #legend.breaks = seq(0, 1, by = 0.2),
+          #legend.vspace = 0.05,
+          #heat.col.scheme = "grey", 
+          #heat.na.col = 'black',
+          heat.pal = c("white", "black"),
+          heat.pal.values = seq(0, 1, by = 0.05), 
+          #title = "(a) Observed frugivory network", 
+          #left.label.text.size = 20, 
+          #bottom.label.text.size = 20, 
+          title.size = 10, 
+          title = "Observed",
+          #title.alignment = "center",
+          legend = TRUE
+)
+
+
+
+# Plot imputed network without title
+#png(paste0(results_path, "Figures/heatmap_observed.png"), width = 1000, height = 510)
+superheat(X = plot_pred[keep_v_index, keep_p_index],
+          membership.rows = v_group[keep_v_index],
+          membership.cols = p_group[keep_p_index],
+          grid.hline.col = "#00257D", grid.vline.col = '#00257D',
+          grid.hline.size = 0.3, grid.vline.size = 0.3,
+          bottom.label.text.angle = 90,
+          left.label.text.size = 8,
+          #bottom.label = "none",
+          bottom.label.text.size = 8,
+          bottom.label.size = 0.40, left.label.size = 0.18,
+          #legend.breaks = seq(0, 1, by = 0.2),
+          #legend.vspace = 0.05,
+          #heat.col.scheme = "grey", 
+          #heat.na.col = 'black',
+          heat.pal = c("white", "black"),
+          heat.pal.values = seq(0, 1, by = 0.05), 
+          #title = "(a) Observed frugivory network", 
+          #left.label.text.size = 20, 
+          #bottom.label.text.size = 20, 
+          title.size = 15, 
+          #title.alignment = "center",
+          legend = TRUE
+)
+
+
+
+# --------------- STEP 3: Taxonomic correlation of latent factors ----------------- #
+if(nchains > 1){
+  all_cor <- abind::abind(all_res[[1]]$correlations, all_res[[2]]$correlations, along = 3)
+  if(nchains>2){for (cc in 3 : nchains) {
+    all_cor <- abind::abind(all_cor, all_res[[cc]]$correlations, along = 3)
+  }
+  }
+}else{
+  all_cor <- all_res[[1]]$correlations
+}
+
+# Posterior means and 95% credible intervals for the rho parameters in the
+# latent factors for bird and plant species:
+apply(all_cor, 2, mean)
+apply(all_cor, 2, quantile, probs = c(0.025, 0.975))
+
+
+# Mixing of the rho parameters
+#all_cor <- array(all_cor, dim = dim(all_cor), dimnames =  list("Iterations", "Parameter", "Chain"))
+all_cor <- provideDimnames(all_cor, base = list("Iterations", "Parameter", "Chain"))
+all_cor <- aperm(all_cor, c(1, 3, 2))
+
+u_df <- as.data.frame(all_cor[,,1]) %>% pivot_longer(., everything(), names_to = "Chain") %>% 
+        mutate(Chain = gsub("Chain", "", Chain)) %>% 
+        mutate(Chain = as.numeric(ifelse(Chain == "", 4, Chain))) %>%
+        rename("U" = "value")
+
+mcmc_trace(u_df)
+
+v_df <- as.data.frame(all_cor[,,2]) %>% pivot_longer(., everything(), names_to = "Chain") %>% 
+  mutate(Chain = gsub("Chain", "", Chain)) %>% 
+  mutate(Chain = as.numeric(ifelse(Chain == "", 4, Chain))) %>%
+  rename("V" = "value")
+mcmc_trace(v_df)
+
+#plot(all_cor[,1], type = "l")
+
+
+
+
+# --------------- STEP 5: Performing trait matching ----------------- #
+# Using the linear predictor of the interaction model (not corrected for bias due to detection, number of studies):
+mod_pL1s <- array(NA, dim = c(nchains * Nsims, nV, nP)) 
+for (cc in 1 : nchains) {
+  wh_entries <- Nsims * (cc - 1) + 1 : Nsims
+  mod_pL1s[wh_entries, , ] <- all_pred[[cc]][, , , 2]
+}
+
+# Dealing with extreme values for which logit(x) is infinite.
+mod_pL1s[mod_pL1s > 1 - 10^{-10}] <- 1 - 10^{-10}
+
+t1 <- Sys.time()
+trait_match <- TraitMatching2(B = 100, mod_pL1s = mod_pL1s,
+                              Xs = NULL, Ws = NULL,  # Imputed values not used.
+                              obs_X = Obs_X, obs_W = Obs_W, obs_only = TRUE)
+
+rsq_resampling_X <- trait_match$rsq_resampling_X
+rsq_resampling_W <- trait_match$rsq_resampling_W
+rsq_obs_X <- trait_match$rsq_obs_X
+rsq_obs_W <- trait_match$rsq_obs_W
+
+save(rsq_obs_X, file = paste0(save_path,  'rsq_obs_X_', date, '.dat'))
+save(rsq_obs_W, file = paste0(save_path, 'rsq_obs_W_', date, '.dat'))
+save(rsq_resampling_X, file = paste0(save_path, 'rsq_resampling_X_', date, '.dat'))
+save(rsq_resampling_W, file = paste0(save_path, 'rsq_resampling_W_', date, '.dat'))
+
+print(Sys.time() - t1)
+#--------------------------- MORE LATENT FACTORS --------------------------------#
+
+## Overview of latent factors for animals
+if(nchains > 1){
+  all_u <- abind::abind(all_res[[1]]$factors[[1]], all_res[[2]]$factors[[1]], along = 3)
+  all_v <- abind::abind(all_res[[1]]$factors[[2]], all_res[[2]]$factors[[2]], along = 3)  
+  if(nchains>2){for (cc in 3 : nchains) {
+    all_u <- abind::abind(all_u, all_res[[cc]]$factors[[1]], along = 3)
+    all_v <- abind::abind(all_v, all_res[[cc]]$factors[[2]], along = 3)
+  }
+  }
+}else{
+  all_u <- all_res[[1]]$factors[[1]]
+  all_v <- all_res[[1]]$factors[[2]]
+}
+
+# Look at animal latent factors
+mean_u <- apply(all_u, c(1,2), mean)
+u_df <- data.frame(factor = paste0("Factor ", 1:10), MeanAbsValue = colMeans(abs(mean_u)), MeanValue = colMeans(mean_u))
+u_df$factor <- factor(u_df$factor, levels = u_df$factor)
+ggplot(u_df, aes(x = factor, y= MeanAbsValue)) + 
+  geom_bar(stat = "identity") +
+  theme_minimal() + 
+  ggtitle("Animal Latent Factors") + 
+  xlab("") + 
+  theme(axis.text.x = element_text(angle = 90), text = element_text(family = "serif", size = 20)) 
+
+
+u_df_animals <- data.frame(mean_u)
+colnames(u_df_animals) <- paste0("Factor_", 1:10)
+u_df_animals$Mammal <- m.names
+ggplot(u_df_animals, aes(x = Factor_1, y = Factor_2, label = Mammal)) + 
+  geom_point() + 
+  geom_label(data = subset(u_df_animals, Mammal %in% c("Papio_anubis", "Papio_cynocephalus"))) + 
+  theme_minimal() + 
+  ggtitle("Animal Latent Factors") + 
+  theme(text = element_text(family = "serif", size = 20)) 
+
+
+# Look at plant latent factors
+mean_v <- apply(all_v, c(1,2), mean)
+v_df <- data.frame(factor = paste0("Factor ", 1:10), MeanAbsValue = colMeans(abs(mean_v)), MeanValue = colMeans(mean_v))
+v_df$factor <- factor(v_df$factor, levels = v_df$factor)
+ggplot(v_df, aes(x = factor, y= MeanAbsValue)) + 
+  geom_bar(stat = "identity") +
+  theme_minimal() + 
+  ggtitle("Plant Latent Factors") + 
+  xlab("") + 
+  theme(axis.text.x = element_text(angle = 90), text = element_text(family = "serif", size = 20)) 
+
+
+v_df_plants <- data.frame(mean_v)
+colnames(v_df_plants) <- paste0("Factor_", 1:10)
+v_df_plants$Species <- plant.names 
+v_df_plants <- left_join(v_df_plants, traits.plants)
+ggplot(v_df_plants, aes(x = Factor_1, y = Factor_2, color = Order)) + 
+  geom_point() + 
+  #geom_label(data = subset(u_df_animals, Mammal %in% c("Papio_anubis", "Papio_cynocephalus"))) + 
+  theme_minimal() + 
+  ggtitle("Plant Latent Factors") + 
+  theme(text = element_text(family = "serif", size = 20)) 
+

@@ -1,0 +1,10 @@
+This folder contains the code to replicate the analysis in the manuscript, 
+including all species names. 
+
+# TO do:
+  # Strip species names in first file instead of after creating obs_A
+  # Copy results into pub folder and rename to test plotting code
+  # Test analysis code by 
+    # running v short
+    # running paper version
+    # running version with more thinning for better mixing to potentially add to a revision?
