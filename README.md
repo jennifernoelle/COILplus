@@ -1,6 +1,6 @@
 # COIL+
 
-This repo extends the model and sampler developed in Papadogeorgou (2023) to account for the effects of extreme taxonomic bias. In this project, we aim to impute missing mammal-plant interactions from a multi-study data set of Afrotropical frugivory. The data are provided with generic species labels for plants and frugivores in compliance with data sharing restrictions.
+This repo contains the code needed to reproduce the results from the main text of the manuscript and extends the model and sampler developed in Papadogeorgou (2023) to account for the effects of extreme taxonomic bias. In this project, we aim to impute missing mammal-plant interactions from a multi-study data set of Afrotropical frugivory. The data are provided with generic species labels for plants and frugivores in compliance with data sharing restrictions.
 
 ## Data set
 
@@ -30,9 +30,19 @@ The code for the analysis is in the folder Analysis/. The numbers in the beginni
 
 -   Anaylsis_0_data_prep.R: This code MUST be run before any subsequent analysis. Assembles key network and meta-data sources.
 
--   Analysis_1_fitCOILplus.R: This code MUST be run before any subsequent plotting functions. Fits COIL+ to the Afrotropical frugivory data.
+-   Analysis_1a_fitCOILplus.R: This code MUST be run before any subsequent plotting functions. Fits COIL+ to the Afrotropical frugivory data with prior incorporating domain knowledge.
 
--   ... clean up below
+-   ... clean up below, add these:
+
+-   Analysis_1b_fitCOIL.R: This code MUST be run before any subsequent plotting functions. Fits basic COIL to the Afrotropical frugivory data with prior incorporating domain knowledge.
+
+-   Analysis_1c_fitCOIL_default.R: This code MUST be run before any subsequent plotting functions. Fits basic COIL to the Afrotropical frugivory data with default prior.
+
+-   Analysis_2b_compare_results.R: This code compares the performance of the the models fit in Analysis_1a - Analysis_1c.
+
+-   Analysis_3a_perform_trait.R: This code MUST be run before the subsequent plotting code. Performs trait matching for the selected results.
+
+-   Analysis_3b_plot_trait.R: This code plots the trait matching.
 
 -   1a_subset_data.R: This code MUST be run before any subsequent analysis. This file subsets data to include only mammals and plants.
 
