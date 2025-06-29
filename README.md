@@ -1,6 +1,6 @@
 # COIL+
 
-This repo contains the code needed to reproduce the results from the main text of the manuscript and extends the model and sampler developed in Papadogeorgou (2023) to account for the effects of extreme taxonomic bias. In this project, we aim to impute missing mammal-plant interactions from a multi-study data set of Afrotropical frugivory. The data are provided with generic species labels for plants and frugivores in compliance with data sharing restrictions.
+This repo contains the code needed to reproduce the results from the main text of the manuscript and extends the model and sampler developed in [Papadogeorgou (2023)](https://github.com/gpapadog/BiasedNetwork) to account for the effects of extreme taxonomic bias. In this project, we aim to impute missing mammal-plant interactions from a multi-study data set of Afrotropical frugivory. The data are provided with generic species labels for plants and frugivores in compliance with data sharing restrictions.
 
 ## Data set
 
@@ -32,40 +32,22 @@ The code for the analysis is in the folder Analysis/. The numbers in the beginni
 
 -   Analysis_1a_fitCOILplus.R: This code MUST be run before any subsequent plotting functions. Fits COIL+ to the Afrotropical frugivory data with prior incorporating domain knowledge.
 
--   ... clean up below, add these:
-
 -   Analysis_1b_fitCOIL.R: This code MUST be run before any subsequent plotting functions. Fits basic COIL to the Afrotropical frugivory data with prior incorporating domain knowledge.
 
 -   Analysis_1c_fitCOIL_default.R: This code MUST be run before any subsequent plotting functions. Fits basic COIL to the Afrotropical frugivory data with default prior.
 
--   Analysis_2b_compare_results.R: This code compares the performance of the the models fit in Analysis_1a - Analysis_1c.
+-   Analysis_2a_cv_COILplus.R: This code MUST be run before any subsequent plotting functions. Performs 10-fold cross validation of COIL+ with the Afrotropical frugivory data with prior incorporating domain knowledge.
 
--   Analysis_3a_perform_trait.R: This code MUST be run before the subsequent plotting code. Performs trait matching for the selected results.
+-   Analysis_2b_cv_COIL.R: This code MUST be run before any subsequent plotting functions. Performs 10-fold cross validation of COIL with the Afrotropical frugivory data with prior incorporating domain knowledge.
 
--   Analysis_3b_plot_trait.R: This code plots the trait matching.
+-   Analysis_2c_cv_COIL_default.R: This code MUST be run before any subsequent plotting functions. Performs 10-fold cross validation of COIL with the Afrotropical frugivory data with default 0/1 prior occurrence prior.
 
--   1a_subset_data.R: This code MUST be run before any subsequent analysis. This file subsets data to include only mammals and plants.
+-   Analysis_3a_plot_results.R: This code analyzes in and out of sample model performance for the any of the three models fit in 1a-2c.
 
--   1b_phylo_verts.R: This code MUST be run before any subsequent analysis. This file generates the vertebrate phylogenetic correlation matrix.
+-   Analysis_4a_trait_matching_save.R: This code MUST be run before the subsequent plotting code. Performs trait matching for the selected model fit.
 
--   1c_phylo_plants.R: This code MUST be run before any subsequent analysis. This file generate the plant phylogenetic correlation matrix.
-
--   2a_subsetting.R: This code MUST be run before any subsequent analysis. This file further subsets the data to exclude isolated species.
-
--   2b_analysis_new_defaultprior.R: perform the analysis using default prior occurrence probabilities under the new sampler.
-
--   2c_analysis_new_expertprior.R: perform the analysis using expert defined prior occurrence probabilities under the new sampler
-
--   3a_cv_new_defaultprior.R: perform cross validation using default prior occurrence probabilities under the new sampler.
-
--   3b_cv_new_expertprior.R: perform cross validation using expert prior occurrence probabilities under the new sampler.
-
--   4a_plot_results_new.R: plot the posterior heatmap and cross validation performance metrics using the new sampler.
+-   Analysis_4b_trait_matching_plot.R: This code plots the trait matching.
 
 ### Note
 
 For replicating the analysis results in this code, you will need to specify a directory where processed data and results can be saved. We recommend you create a folder at the same level as the Analysis/, Data/, and R/ folders that is named Results/ and ProcessedData/.
-
-to do
-
--   See if we need to re-run with sorted obs_A, figure out how it got out of order
