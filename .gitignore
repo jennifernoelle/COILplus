@@ -3,8 +3,14 @@
 .Rhistory
 .RData
 .Ruserdata
+*.Rproj
 
 # Output and log files
 *.out
 *.Rout
 *.sh
+*.log
+
+# Processed data and results
+Results/
+ProcessedData/
