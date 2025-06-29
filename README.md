@@ -65,3 +65,7 @@ The code for the analysis is in the folder Analysis/. The numbers in the beginni
 ### Note
 
 For replicating the analysis results in this code, you will need to specify a directory where processed data and results can be saved. We recommend you create a folder at the same level as the Analysis/, Data/, and R/ folders that is named Results/ and ProcessedData/.
+
+to do
+
+-   See if we need to re-run with sorted obs_A, figure out how it got out of order
