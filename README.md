@@ -1,10 +1,10 @@
 # COIL+
 
-This repo contains the code needed to reproduce the results from the main text of the manuscript and extends the model and sampler developed in [Papadogeorgou (2023)](https://github.com/gpapadog/BiasedNetwork) to account for the effects of extreme taxonomic bias. In this project, we aim to impute missing mammal-plant interactions from a multi-study data set of Afrotropical frugivory. The data are provided with generic species labels for plants and frugivores in compliance with data sharing restrictions.
+This repo contains the code needed to reproduce the results from the main text of the manuscript and extends the model and sampler developed in Papadogeorgou (2023) to account for the effects of extreme taxonomic bias. In this project, we aim to impute missing mammal-plant interactions from a multi-study data set of Afrotropical frugivory. The data are provided with generic species labels for plants and frugivores in compliance with data sharing restrictions.
 
 ## Data set
 
-The key raw data sources are:
+The key raw data sources are are in the folder RawData:
 
 -   Raw frugivory interactions with generic species labels and the variables study ID, study site, country, zone, focus: frug_generic.csv
 
@@ -24,7 +24,7 @@ Plant phylogenies is acquired using the V.PhyloMaker R package and the phylogene
 
 ## Code
 
-The folder R/ includes functions (with substantial modifications and additions from <https://github.com/gpapadog/BiasedNetwork>) that are used in the analysis code while the folder HelperScriptsOld/ includes more minor modifications for occurrence estimation within the original model for comparison purposes.
+The folder R/ includes functions with substantial modifications and additions from the [BiasedNetwork](https://github.com/gpapadog/BiasedNetwork) repo that are used in the analysis code.
 
 The code for the analysis is in the folder Analysis/. The numbers in the beginning of the file names represent the order with which the files should be used/run. In brief the content of each analysis file is as follows:
 
