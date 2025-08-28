@@ -97,6 +97,94 @@ fast_loglik <- function(pi_prop_st, prod1, occur_prop_st) {
   occur_prop_st * log_p1 + (1 - occur_prop_st) * log_p0
 }
 
+# # drop-in replacement for fast_loglik() that expects log_prod1 (not prod1)
+# fast_loglik_log <- function(pi_prop_st, log_prod1, occur_prop_st) {
+#   # returns vector of log-probabilities rowwise
+#   eps <- 1e-12
+#   pi  <- pmin(pmax(pi_prop_st, eps), 1 - eps)
+#   
+#   a <- log(pi) + log_prod1         # log numerator for prob1
+#   b <- log1p(-pi)                  # log(1 - pi)
+#   
+#   lse <- pmax(a, b) + log(exp(a - pmax(a, b)) + exp(b - pmax(a, b)))
+#   log_p1 <- a - lse
+#   log_p0 <- b - lse
+#   
+#   occur_prop_st * log_p1 + (1 - occur_prop_st) * log_p0
+# }
+
+
+# # y = occur_prop_st (0/1), pi = pi_prop_st
+# fast_loglik_log <- function(pi, log_prod1, y) {
+#   eps <- 1e-12
+#   pi  <- pmin(pmax(pi, eps), 1 - eps)
+#   c   <- qlogis(pi) + log_prod1
+#   sp  <- log1p(exp(-abs(c))) + pmax(c, 0)
+#   y * c - sp
+# }
+
+
+fast_loglik_log <- function(pi, log_prod1, y) {
+  eps <- 1e-12
+  pi  <- pmin(pmax(pi, eps), 1 - eps)
+  c   <- log(pi) - log1p(-pi) + log_prod1
+  sp  <- log1p(exp(-abs(c))) + pmax(c, 0)
+  y * c - sp
+}
+
+
+# logZ for truncated N( mean=prior, sd=mh_pprior_sd ) on [0,1]: precomputed outside of mcmc 
+precompute_logZ <- function(mu_mat, sd_scalar) {
+  a <- pnorm((1 - mu_mat) / sd_scalar, log.p = TRUE)
+  b <- pnorm((-mu_mat)   / sd_scalar,  log.p = TRUE)
+  a + log1p(-exp(pmin(0, b - a)))  # stable log(exp(a) - exp(b))
+}
+
+
+# Helper function to update derived quantities
+# Faster replacement: only touch cells where O_V==1 & O_P==1
+recompute_AFO <- function(O_V, O_P, AF, AbarF) {
+  nB <- nrow(O_V); nP <- nrow(O_P); nS <- ncol(O_V)
+  AFO    <- matrix(0, nB, nP)
+  AbarFO <- matrix(0, nB, nP)
+  
+  for (st in seq_len(nS)) {
+    idxB <- which(O_V[, st] != 0L); if (!length(idxB)) next
+    idxP <- which(O_P[, st] != 0L); if (!length(idxP)) next
+    
+    # Equivalent to AF[,,st] * (O_V[,st] %o% O_P[,st]) but sparse
+    AFO[   idxB, idxP] <- AFO[   idxB, idxP] + AF[   idxB, idxP, st]
+    AbarFO[idxB, idxP] <- AbarFO[idxB, idxP] + AbarF[idxB, idxP, st]
+  }
+  list(AFO = AFO, AbarFO = AbarFO, FO = AFO + AbarFO)
+}
+
+# recompute_AFO <- function(O_V, O_P, AF, AbarF) { # faster version
+#   nB <- nrow(O_V); nP <- nrow(O_P); nS <- ncol(O_V)
+#   AFO    <- matrix(0, nB, nP)
+#   AbarFO <- matrix(0, nB, nP)
+#   
+#   for (st in 1:nS) {
+#     Oss <- O_V[, st, drop = FALSE] %*% t(O_P[, st, drop = FALSE])
+#     AFO    <- AFO    + AF[,, st]    * Oss
+#     AbarFO <- AbarFO + AbarF[,, st] * Oss
+#   }
+#   list(AFO = AFO, AbarFO = AbarFO, FO = AFO + AbarFO)
+#}
+# recompute_AFO <- function(O_V, O_P, obs_A, focus) {
+#   nstudies <- dim(obs_A)[3]
+#   nB <- nrow(O_V); nP <- nrow(O_P)
+#   AFO    <- matrix(0, nB, nP)
+#   AbarFO <- matrix(0, nB, nP)
+#   for (st in seq_len(nstudies)) {
+#     Oss <- O_V[, st, drop = FALSE] %*% t(O_P[, st, drop = FALSE])   # nB x nP
+#     AFO    <- AFO    + obs_A[,,st]        * focus[,,st] * Oss
+#     AbarFO <- AbarFO + (1 - obs_A[,,st])  * focus[,,st] * Oss
+#   }
+#   list(AFO = AFO, AbarFO = AbarFO, FO = AFO + AbarFO)
+# }
+
+
 
 
 

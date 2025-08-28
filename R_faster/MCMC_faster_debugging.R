@@ -92,7 +92,8 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
                  prior_rho = c(5, 5), prior_mu0 = 0, prior_sigmasq0 = 10,
                  prior_sigmasq = c(1, 1), start_values = NULL,
                  sampling = NULL, 
-                 cut_feed = FALSE, block_sampleOccP = FALSE, 
+                 cut_feed = FALSE, 
+                 # block_sampleOccP = FALSE, # This is now the only option
                  save_logL = FALSE, save_rhos = FALSE) {
 
   
@@ -108,10 +109,9 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
                      O_P = TRUE, p_OV = TRUE, p_OP = TRUE)
   }
   
-  # Return error if block updating is specified, but occurrence probs are not sampled
-  if(block_sampleOccP==TRUE & (sampling$p_OV == FALSE & sampling$p_OP == FALSE)){
-    stop("Error: one or both of sampling$p_OV and sampling$p_OP must be TRUE in
-            order to use block updating of occurrence indicators and probabilities")
+  # Error if trying to sample occurrence probabilities without also sampling indicators
+  if ((sampling$p_OV && !sampling$O_V) || (sampling$p_OP && !sampling$O_P)) {
+    stop("Error: You cannot sample occurrence probabilities (p_OV or p_OP) without also sampling the corresponding occurrence indicators (O_V or O_P).")
   }
   
   # Without bias adjustment, some parameters are not updated:
@@ -277,6 +277,26 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
   
   logL <- rep(NA, Nsims*thin + burn)
   
+  # Setup timing information for benchmarking
+  timings <- list(
+    L = 0, lambda = 0, tau = 0, beta = 0, gamma = 0,
+    sigmasq = 0, sigmasq_p = 0, delta_zeta = 0,
+    U_elapsed = 0,
+    U_chol = 0,       # NEW
+    U_Update = 0,    # NEW
+    V_elapsed = 0,
+    V_chol = 0,      # NEW
+    V_Update = 0,    # NEW
+    v_omega = 0, z = 0, theta = 0,
+    pis_pjs = 0, rho = 0, missing_covs = 0, 
+    occur_block_P = 0,
+    occur_block_V = 0,
+    occur_derived = 0,
+    occur = 0,  # total
+    logL = 0
+  )
+  
+  
   # ---------------- PART 3 ------------- #
   # Setting starting values for the parameters.
   
@@ -322,7 +342,7 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
   } else {this_occur_P <- p_occur_P}  # New so that we don't randomly initialize the probs when we aren't sampling them
 
   
-  # ------- Dealing with individual study focus and co-occurence.
+  # ------- Precompute and initialize constants dealing with individual study focus and co-occurence.
   # Indicator of occurrence for each set of species:
   this_O_V <- matrix(rbinom(nB * nstudies, 1, prob = p_occur_V), nB, nstudies) # New: initialize with prior probs
   this_O_P <- matrix(rbinom(nP * nstudies, 1, prob = p_occur_P), nP, nstudies) # New: initialize with prior probs 
@@ -336,6 +356,10 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
   this_1_AFO <- apply((1 - obs_A) * focus * this_O, c(1, 2), sum)
   # Total number of studies with focus and occurence
   this_FO <- this_AFO + this_1_AFO
+  
+  AF    <- obs_A * focus
+  AbarF <- (1 - obs_A) * focus
+  
   
   # Draw starting values for missing covariates from observed distribution.
   if (any_X_miss) {
@@ -434,6 +458,8 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
     
     # ------ L: Update true interactions. -------- #
     
+    time_start_L <- proc.time()
+    
     if (sampling$L | sampling$lambda | sampling$U | sampling$V) {
       
       # Probability of L = 1 under the network model.
@@ -467,9 +493,12 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       
     }
     
+    timings$L <- timings$L + (proc.time() - time_start_L)[3]
     
     
     # ------- lambda: Update the coefficients in network model ------- #
+    
+    time_start_lambda <- proc.time()
     
     if (sampling$lambda | sampling$U) {
       # Sample the Polya-Gamma random variables:
@@ -500,9 +529,11 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       
     }
     
+    timings$lambda <- timings$lambda + (proc.time() - time_start_lambda)[3]
     
     # ----------- tau: Update the extra variances ------------ #
     
+    time_start_tau <- proc.time()
     if (sampling$tau) {
       
       this_tau_beta <- UpdExtraVar(mod_coef = this_beta[, - 1],
@@ -528,9 +559,11 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
                                    shr_var = this_theta, prior_spec = prior_tau)
     }
     
+    timings$tau <- timings$tau + (proc.time() - time_start_tau)[3]
     
     # ------- beta: Coefficients of bird physical traits --------- #
     
+    time_start_beta <- proc.time()
     if (sampling$beta) {
       r <- UpdTraitCoef(obs_cov = this_X, latfac = this_U,
                         resid_var = this_sigmasq_m, shr_var = this_theta,
@@ -541,8 +574,11 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       omega_obsX <- r$omegas
     }
     
+    timings$beta <- timings$beta + (proc.time() - time_start_beta)[3]
     
     # -------- gamma: Coefficients of plant physical traits ---------- #
+    
+    time_start_gamma <- proc.time()
     
     if (sampling$gamma) {
       r <- UpdTraitCoef(obs_cov = this_W, latfac = this_V,
@@ -554,8 +590,11 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       omega_obsW <- r$omegas  
     }
     
+    timings$gamma <- timings$gamma + (proc.time() - time_start_gamma)[3]
     
     # ------- sigmasq: Residual variance for continuous traits -------- #
+    
+    time_start_sigmasq <- proc.time()
     
     if (sampling$sigmasq) {
       # For bird continuous traits:  
@@ -575,8 +614,11 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       }  
     }
     
+    timings$sigmasq <- timings$sigmasq + (proc.time() - time_start_sigmasq)[3]
     
     # ----- sigmasq_p: Residual variance for probability of observing ------- #
+    
+    time_start_sigmasq_p <- proc.time()
     
     if (sampling$sigmasq_p) {
       new_a <- prior_sigmasq[1] + nB / 2
@@ -590,8 +632,11 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       this_sigmasq_pP <- 1 / rgamma(1, shape = new_a, rate = new_b)  
     }
     
+    timings$sigmasq_p <- timings$sigmasq_p + (proc.time() - time_start_sigmasq_p)[3]
     
     # ------- deltas, zetas: Coefficients of probability of observing ------- #
+    
+    time_start_dz <- proc.time()
     
     if (sampling$delta) {
       # deltas.
@@ -617,44 +662,99 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       this_zeta <- mvnfast::rmvn(1, new_m, new_S)
     }
     
-    
-    # ------- U(h): Latent factors for the birds.
-    
-    if (sampling$U | sampling$V) {
-      omega_L <- matrix(omega_L, nrow = nB, ncol = nP)
-    }
-    
-    if (sampling$U) {
-      this_Su_inv <- chol2inv(chol(this_Su))
-      this_U <- UpdLatFac(latfac = this_U, latfac_others = this_V, probobs = this_pi,
-                          coefs_probobs = this_delta, var_probobs = this_sigmasq_pB,
-                          obs_covs = this_X, omega_obs_covs = omega_obsX,
-                          num_covs = pB, coefs_covs = this_beta,
-                          var_covs = this_sigmasq_m,
-                          curr_inter = this_L, coefs_inter = this_lambda,
-                          omega_inter = omega_L,
-                          prior_S_inv = this_Su_inv,
-                          cut_feed = cut_feed)
-    }
+    timings$delta_zeta <- timings$delta_zeta + (proc.time() - time_start_dz)[3]
     
     
-    # ------- V(h): Latent factors for the plants.
+    # # ------- U(h): Latent factors for the birds.
+    # 
+    # time_start_U <- proc.time()
+    # 
+    # if (sampling$U | sampling$V) {
+    #   omega_L <- matrix(omega_L, nrow = nB, ncol = nP)
+    # }
+    # 
+    # if (sampling$U) {
+    # 
+    #   t0 <- proc.time()
+    #   this_Su_inv <- chol2inv(chol(this_Su))
+    #   timings$U_chol <- timings$U_chol + (proc.time() - t0)[3]
+    #   
+    #   this_U <- UpdLatFac(latfac = this_U, latfac_others = this_V, probobs = this_pi,
+    #                       coefs_probobs = this_delta, var_probobs = this_sigmasq_pB,
+    #                       obs_covs = this_X, omega_obs_covs = omega_obsX,
+    #                       num_covs = pB, coefs_covs = this_beta,
+    #                       var_covs = this_sigmasq_m,
+    #                       curr_inter = this_L, coefs_inter = this_lambda,
+    #                       omega_inter = omega_L,
+    #                       prior_S_inv = this_Su_inv,
+    #                       cut_feed = cut_feed)
+    # }
+    # 
+    # timings$U <- timings$U + (proc.time() - time_start_U)[3]
+    # 
+    # # ------- V(h): Latent factors for the plants.
+    # 
+    # time_start_V <- proc.time()
+    # 
+    # if (sampling$V) {
+    #   this_Sv_inv <- chol2inv(chol(this_Sv))
+    #   this_V <- UpdLatFac(latfac = this_V, latfac_others = this_U, probobs = this_pj,
+    #                       coefs_probobs = this_zeta, var_probobs = this_sigmasq_pP,
+    #                       obs_covs = this_W, omega_obs_covs = omega_obsW,
+    #                       num_covs = pP, coefs_covs = this_gamma,
+    #                       var_covs = this_sigmasq_l,
+    #                       curr_inter = t(this_L), coefs_inter = this_lambda,
+    #                       omega_inter = t(omega_L),
+    #                       prior_S_inv = this_Sv_inv,
+    #                       cut_feed = cut_feed)  
+    # }
+    # 
+    # timings$V <- timings$V + (proc.time() - time_start_V)[3]
     
-    if (sampling$V) {
-      this_Sv_inv <- chol2inv(chol(this_Sv))
-      this_V <- UpdLatFac(latfac = this_V, latfac_others = this_U, probobs = this_pj,
-                          coefs_probobs = this_zeta, var_probobs = this_sigmasq_pP,
-                          obs_covs = this_W, omega_obs_covs = omega_obsW,
-                          num_covs = pP, coefs_covs = this_gamma,
-                          var_covs = this_sigmasq_l,
-                          curr_inter = t(this_L), coefs_inter = this_lambda,
-                          omega_inter = t(omega_L),
-                          prior_S_inv = this_Sv_inv,
-                          cut_feed = cut_feed)  
-    }
+    # --- U ---
+    time_U <- proc.time()
+    
+    # reshape omega once (cheap)
+    if (sampling$U | sampling$V) omega_L <- matrix(omega_L, nrow = nB, ncol = nP)
+    
+    t0 <- proc.time()
+    this_Su_inv <- chol2inv(chol(this_Su))
+    timings$U_chol <- timings$U_chol + (proc.time() - t0)[3]
+    
+    t1 <- proc.time()
+    this_U <- UpdLatFac(
+      latfac = this_U, latfac_others = this_V, probobs = this_pi,
+      coefs_probobs = this_delta, var_probobs = this_sigmasq_pB,
+      obs_covs = this_X, omega_obs_covs = omega_obsX, num_covs = pB,
+      coefs_covs = this_beta, var_covs = this_sigmasq_m,
+      curr_inter = this_L, coefs_inter = this_lambda,
+      omega_inter = omega_L, prior_S_inv = this_Su_inv, cut_feed = cut_feed
+    )
+    timings$U_Update <- timings$U_Update + (proc.time() - t1)[3]
+    timings$U_elapsed <- timings$U_elapsed + (proc.time() - time_U)[3]
+    
+    # --- V ---
+    time_V <- proc.time()
+    t2 <- proc.time()
+    this_Sv_inv <- chol2inv(chol(this_Sv))
+    timings$V_chol <- timings$V_chol + (proc.time() - t2)[3]
+    
+    t3 <- proc.time()
+    this_V <- UpdLatFac(
+      latfac = this_V, latfac_others = this_U, probobs = this_pj,
+      coefs_probobs = this_zeta, var_probobs = this_sigmasq_pP,
+      obs_covs = this_W, omega_obs_covs = omega_obsW, num_covs = pP,
+      coefs_covs = this_gamma, var_covs = this_sigmasq_l,
+      curr_inter = t(this_L), coefs_inter = this_lambda,
+      omega_inter = t(omega_L), prior_S_inv = this_Sv_inv, cut_feed = cut_feed
+    )
+    timings$V_Update <- timings$V_Update + (proc.time() - t3)[3]
+    timings$V_elapsed <- timings$V_elapsed + (proc.time() - time_V)[3]
     
     
     # ------- v, omega: Stick breaking weights.
+    
+    time_start_vo <- proc.time()
     
     if (sampling$v) {
       new_a <- 1 + sapply(1 : use_H, function(x) sum(this_z == x))
@@ -663,8 +763,11 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       this_omega <- OmegaFromV(v_val = this_v)
     }
     
+    timings$v_omega <- timings$v_omega + (proc.time() - time_start_vo)[3]
     
     # ------- z: Latent variables for which of H components.
+    
+    time_start_z <- proc.time()
     
     if (sampling$z) {
       
@@ -706,8 +809,12 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       }
     }
     
+    timings$z <- timings$z + (proc.time() - time_start_z)[3]
     
     # ------- theta: Shrinking variable of parameters at dimension h.
+    
+    time_start_theta <- proc.time()
+    
     if (sampling$theta) {
       new_a <- prior_theta[1] + sum(c(pB, pP, 1)) / 2
       add_on <- (apply(this_beta[, - 1] ^ 2 / this_tau_beta, 2, sum) +
@@ -723,8 +830,11 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       this_theta <- ifelse(this_z <= 1 : use_H, theta_inf, theta_vals)
     }
     
+    timings$theta <- timings$theta + (proc.time() - time_start_theta)[3]
     
     # ------- pis, pjs: Probability of observing for birds and plants.
+    
+    time_start_pis <- proc.time()
     
     if (sampling$pis) {
       upd_prob_obs <- UpdProbObs(probobs_curr = this_pi,
@@ -756,8 +866,11 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       pj_accepted <- pj_accepted + upd_prob_obs$accepted
     }
     
+    timings$pis_pjs <- timings$pis_pjs + (proc.time() - time_start_pis)[3]
     
     # ------ rho: Weight of phylogenetic information in latent factor covariance.
+    
+    time_start_rho <- proc.time()
     
     if (sampling$rU) {
       upd_rho <- UpdRho(curr_r = this_ru, curr_S = this_Su, corr_C = Cu,
@@ -775,8 +888,12 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       rv_accepted <- rv_accepted + upd_rho$accepted
     }
     
+    timings$rho <- timings$rho + (proc.time() - time_start_rho)[3]
+    
     
     # -------- Missing covariate values --------- #
+    
+    time_start_covs <- proc.time()
     
     if (any_X_miss & sampling$miss_X) {
       for (jj in 1 : sum(pB)) {
@@ -810,128 +927,19 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       }
     }
     
+    timings$missing_covs <- timings$missing_covs + (proc.time() - time_start_covs)[3]
     
-    # ----------- Occurrence indicators and occurrence probabilties -------------- #
+    # ----------- Occurrence indicators and occurrence probabilities -------------- #
     
-    ## A. Option 1 (default): sequential sampling
+    time_start_occs <- proc.time()
+
+   ### Plants
     
-    # If using unblocked sampler, we sample occurrence indicator and probs with separate functions
-  
-    if(block_sampleOccP ==  FALSE){
+    if (sampling$O_P || sampling$p_OP) {
+      time_start_block_P <- proc.time()
       
-      # 1. Sample the indicators 
-      
-      if (sampling$O_V){
-        
-        this_O_V <- UpdOccur(detected = detected_B,
-                             occur =this_occur_B,
-                             occur_others = this_O_P,
-                             probobs_curr = this_pi,
-                             probobs_others = this_pj,
-                             curr_inter = this_L,
-                             focus = focus)
-        
-      }
-      
-      # # Line by line debugging
-      # detected = detected_B
-      # occur = occur_B # occurrence probabilities
-      # occur_others = this_O_P
-      # probobs_curr = this_pi
-      # probobs_others = this_pj
-      # curr_inter = this_L
-      # focus = focus
-      
-      if (sampling$O_P){
-        
-        this_O_P <- UpdOccur(detected = detected_P,
-                             occur =this_occur_P,
-                             occur_others = this_O_V,
-                             probobs_curr = this_pj,
-                             probobs_others = this_pi,
-                             curr_inter = t(this_L),
-                             focus = aperm(focus, c(2, 1, 3)))
-        
-        
-      }
-      
-      if (sampling$O_V | sampling$O_P) {  # If updated, update derived quantities
-        
-        # this_O <- as.numeric(do.call(abind::abind, c(lapply(seq(nstudies), function(ss)
-        #   outer(this_O_V[,ss], this_O_P[,ss])), along = 3)))
-        this_O <- do.call(abind::abind, c(lapply(seq(nstudies), function(ss)
-          outer(this_O_V[,ss], this_O_P[,ss])), along = 3))
-        
-        this_AFO <- apply(obs_A * focus * this_O, c(1, 2), sum) # Whole-number valued nV x nP 
-        this_1_AFO <- apply((1 - obs_A) * focus * this_O, c(1, 2), sum)
-        this_FO <- this_AFO + this_1_AFO
-        
-      }
-      
-      # Debugging warning
-      if(mean(this_O_P[p_occur_P==1])!=1){
-        warning("Sampler error in O_P: All detected species should have occurrence always = 1.")
-      }
-      if(mean(this_O_V[p_occur_V==1])!=1){
-        warning("Sampler error in O_V: All detected species should have occurrence always = 1.")
-      }
-      
-      
-      #2. Sample the occurrence probabilities
-      
-      if(sampling$p_OV){ 
-        
-        
-        upd_p_OV <- UpdOccurP(occur_indicators = this_O_V, 
-                              occur_prior_probs = p_occur_V, 
-                              curr_occur_probs =this_occur_B, 
-                              detected = detected_B,
-                              mh_pprior_sd = mh_pprior_sd, 
-                              mh_p_step = mh_p_step)
-        
-        # Update occurrence probabilities
-        this_occur_B <- upd_p_OV$new_value_p
-        p_OV_accepted <- p_OV_accepted + upd_p_OV$accepted
-        
-      }
-      
-      if(sampling$p_OP){
-        
-        upd_P_OP <- UpdOccurP(occur_indicators = this_O_P, 
-                              occur_prior_probs = p_occur_P, 
-                              curr_occur_probs =this_occur_P, 
-                              detected = detected_P,
-                              mh_pprior_sd = mh_pprior_sd, 
-                              mh_p_step = mh_p_step)
-        
-        # Update occurrence probabilities
-        this_occur_P <- upd_P_OP$new_value_p
-        p_OP_accepted <- p_OP_accepted + upd_P_OP$accepted
-        
-      }
-      
-      # No updated quantities needed because this is the occurrence probabilities not the indicators
-      
-      # Debugging warning
-      if(mean(this_occur_P[p_occur_P==1])!=1){
-        warning("Sampler error in p_occur_P: All detected species should have occurrence probability = 1.")
-      }
-      if(mean(this_occur_B[p_occur_V==1])!=1){
-        warning("Sampler error in p_occur_V: All detected species should have occurrence probability = 1.")
-      }
-      
-      
-    } # End if statement for unblocked updating
-    
-    
-    # B. Option 2: blocked sampling 
-    
-  
-    
-    if(block_sampleOccP){
-      
-      ### Plants
-      if(sampling$O_P == TRUE & sampling$p_OP == TRUE){
+      # Blocked updating of plant indicators and occurrence probabilities
+      if(sampling$p_OP){ 
         upd_OccP_P <- UpdOccurP_blocked(mh_p_step = mh_p_step, mh_pprior_sd = mh_pprior_sd, 
                                           p_1to0 = p_1to0, p_0to1 = p_0to1, 
                                           p_curr = this_occur_P, occ_curr = this_O_P,
@@ -941,17 +949,48 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
                                           curr_inter = t(this_L),
                                           focus = aperm(focus, c(2, 1, 3)), 
                                           detected = detected_P)
-        # Update occurrence probabilities
+        # Update occurrence probabilities and indicators 
         this_O_P <- upd_OccP_P$occ_curr
         this_occur_P <- upd_OccP_P$p_curr
         occP_P_accepted <- occP_P_accepted + upd_OccP_P$accepted
         
+        # Warning
+        if(mean(this_O_P[p_occur_P==1])!=1){
+          warning("Sampler error in O_P: All detected species should have occurrence always = 1.")
+        }
+
+        if(mean(this_occur_B[p_occur_V==1])!=1){
+          warning("Sampler error in p_occur_V: All detected species should have occurrence probability = 1.")
+        }
+        
+      } else if (sampling$O_P) {
+        # Only sample indicators
+        
+        this_O_P <- UpdOccur(detected = detected_P,
+                             occur =this_occur_P,
+                             occur_others = this_O_V,
+                             probobs_curr = this_pj,
+                             probobs_others = this_pi,
+                             curr_inter = t(this_L),
+                             focus = aperm(focus, c(2, 1, 3)))
+      }
+       
+      # Debugging warning
+      if(mean(this_O_P[p_occur_P==1])!=1){
+        warning("Sampler error in O_P: All detected species should have occurrence always = 1.")
       } 
+      
+      timings$occur_block_P <- timings$occur_block_P + (proc.time() - time_start_block_P)[3]
+    }
       
 
       
-      ### Animals (Birds originally)
-      if(sampling$O_V == TRUE & sampling$p_OV == TRUE){
+    ### Vertebrates ("Birds")
+    if (sampling$O_V || sampling$p_OV) {
+      time_start_block_V <- proc.time()
+      
+     # Blocked updating of vertebrate indicators and occurrence probabilities
+      if(sampling$p_OV){
         upd_OccP_B <- UpdOccurP_blocked(mh_p_step = mh_p_step, mh_pprior_sd = mh_pprior_sd, 
                                         p_1to0 = p_1to0, p_0to1 = p_0to1, 
                                         p_curr = this_occur_B, occ_curr = this_O_V,
@@ -962,52 +1001,86 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
                                         focus = focus, 
                                         detected = detected_B)
         
-        # Update occurrence probabilities
+        # Update occurrence indicators and probabilities
         this_O_V <- upd_OccP_B$occ_curr
         this_occur_B <- upd_OccP_B$p_curr
         occP_B_accepted <- occP_B_accepted + upd_OccP_B$accepted
+        
+        # Warning check
+        if(mean(this_O_V[p_occur_V==1])!=1){
+          warning("Sampler error in O_V: All detected species should have occurrence always = 1.")
+        }
+        if(mean(this_occur_B[p_occur_V==1])!=1){
+          warning("Sampler error in p_occur_V: All detected species should have occurrence probability = 1.")
+        }
+      } else if(sampling$p_OV){
+        # Update only occurrence indicators
+        this_O_V <- UpdOccur(detected = detected_B,
+                             occur =this_occur_B,
+                             occur_others = this_O_P,
+                             probobs_curr = this_pi,
+                             probobs_others = this_pj,
+                             curr_inter = this_L,
+                             focus = focus)
+        
         }
 
-      # Update computed quantities
-      if (sampling$O_V | sampling$O_P) {  # If updated, update derived quantities
-        
-        # this_O <- as.numeric(do.call(abind::abind, c(lapply(seq(nstudies), function(ss)
-        #   outer(this_O_V[,ss], this_O_P[,ss])), along = 3)))
-        this_O <- do.call(abind::abind, c(lapply(seq(nstudies), function(ss)
-          outer(this_O_V[,ss], this_O_P[,ss])), along = 3))
-        
-        this_AFO <- apply(obs_A * focus * this_O, c(1, 2), sum)
-        this_1_AFO <- apply((1 - obs_A) * focus * this_O, c(1, 2), sum)
-        this_FO <- this_AFO + this_1_AFO
-        
-      }
-      
-      # Debugging warning 
-     # if(mean(this_O_P[obs_OP==1])!=1){
-      if(mean(this_O_P[p_occur_P==1])!=1){
-        warning("Sampler error in O_P: All detected species should have occurrence always = 1.")
-      }
       if(mean(this_O_V[p_occur_V==1])!=1){
         warning("Sampler error in O_V: All detected species should have occurrence always = 1.")
       }
       
-      # Debugging warning
-      if(mean(this_occur_P[p_occur_P==1])!=1){
-        warning("Sampler error in p_occur_P: All detected species should have occurrence probability = 1.")
+      timings$occur_block_V <- timings$occur_block_V + (proc.time() - time_start_block_V)[3]
+    }
+    
+    
+    # Update computed quantities
+    if (sampling$O_V || sampling$O_P) {
+      time_start_derived <- proc.time()
+      
+      # stream the sums; no big 3D array, no abind
+      this_AFO   <- matrix(0, nrow = nB, ncol = nP)
+      this_1_AFO <- matrix(0, nrow = nB, ncol = nP)
+      
+      for (st in 1:nstudies) {
+        Oss <- this_O_V[, st, drop = FALSE] %*% t(this_O_P[, st, drop = FALSE])
+        this_AFO   <- this_AFO   + AF[,, st]    * Oss
+        this_1_AFO <- this_1_AFO + AbarF[,, st] * Oss
       }
-      if(mean(this_occur_B[p_occur_V==1])!=1){
-        warning("Sampler error in p_occur_V: All detected species should have occurrence probability = 1.")
-      }
       
+      this_FO <- this_AFO + this_1_AFO
+      timings$occur_derived <- timings$occur_derived + (proc.time() - time_start_derived)[3]
+    }
+    
+    
+    # if (sampling$O_V | sampling$O_P) {  # If updated, update derived quantities
+    #   time_start_derived <- proc.time()
+    #   
+    #   # this_O <- do.call(abind::abind, c(lapply(seq(nstudies), function(ss)
+    #   #   outer(this_O_V[,ss], this_O_P[,ss])), along = 3))
+    #   
+    #   # Fast replacement for this_O
+    #   this_O <- array(NA, dim = c(nrow(this_O_V), nrow(this_O_P), nstudies))
+    #   for (ss in seq_len(nstudies)) {
+    #     this_O[,,ss] <- this_O_V[, ss, drop = FALSE] %*% t(this_O_P[, ss, drop = FALSE])
+    #   }
+    #   
+    #   this_AFO <- apply(obs_A * focus * this_O, c(1, 2), sum)
+    #   this_1_AFO <- apply((1 - obs_A) * focus * this_O, c(1, 2), sum)
+    #   this_FO <- this_AFO + this_1_AFO
+    #   
+    #   timings$occur_derived <- timings$occur_derived + (proc.time() - time_start_derived)[3]
+    # }
       
-
-      
-    } # End if statement for blocked sampling
+    
+    timings$occur <- timings$occur + (proc.time() - time_start_occs)[3]
     
     # -------------- END OF MCMC UPDATES ------------- #
     
 
     #---------------------- Log Likelihood ----------------------------#
+    
+    time_start_logL <- proc.time()
+    
     if(save_logL){
     
     
@@ -1035,40 +1108,43 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
     rV[ss] <- this_rv
     }
     
+    timings$logL <- timings$logL + (proc.time() - time_start_logL)[3]
     
     # ------ Saving the results every thin iteration after burn in:
+    
+    
     if ((ss - burn) %% thin == 0 & ss > burn) {
-      
+
       # TRIM: Update running means
       pi_cumsum <- pi_cumsum + this_pi
       pi_mean <- pi_cumsum/keep_index
-    
+
       pj_cumsum <- pj_cumsum + this_pj
       pj_mean <- pj_cumsum/keep_index
-      
+
       U_cumsum <- U_cumsum + this_U
       U_mean <- U_cumsum/keep_index
-        
+
       V_cumsum <- V_cumsum + this_V
       V_mean <- V_cumsum/keep_index
-      
+
       p_OV_cumsum <- p_OV_cumsum + this_occur_B # occurrence probabilities
       p_OV_mean <- p_OV_cumsum/keep_index
-      p_OP_cumsum <- p_OP_cumsum + this_occur_P 
+      p_OP_cumsum <- p_OP_cumsum + this_occur_P
       p_OP_mean <- p_OP_cumsum/keep_index
-      
-      OV_cumsum <- OV_cumsum + this_O_V  # occurrence indicators   
+
+      OV_cumsum <- OV_cumsum + this_O_V  # occurrence indicators
       OV_mean <- OV_cumsum/keep_index
       OP_cumsum <- OP_cumsum + this_O_P
       OP_mean <- OP_cumsum/keep_index
-        
+
       #p_OVs[keep_index, , ] <- this_occur_B # trim after debugging
       #p_OPs[keep_index, , ] <- this_occur_P
-      
+
       Ls[keep_index, , ] <- this_L
       #pL1s[keep_index, , ] <- this_pL1 #TRIM
       mod_pL1s[keep_index, , ] <- this_mod_pL1
-      
+
       lambdas[keep_index, ] <- this_lambda
       taus_beta[keep_index, , ] <- this_tau_beta
       taus_gamma[keep_index, , ] <- this_tau_gamma
@@ -1093,7 +1169,7 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       #pjs[keep_index, ] <- this_pj #TRIM
       # rU[keep_index] <- this_ru
       # rV[keep_index] <- this_rv
-      # 
+      #
       if (any_X_miss) {
         for (jj in 1 : sum(pB)) {
           Xs[[jj]][keep_index, ] <- this_X[miss_X_ind[[jj]], jj]
@@ -1104,13 +1180,13 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
           Ws[[jj]][keep_index, ] <- this_W[miss_W_ind[[jj]], jj]
         }
       }
-      
+
       # Increasing the index by 1.
       keep_index <- keep_index + 1
     }
-    
+
   }
-  
+
   
   # ---------- PART 5 ---------- #
   # Returning the results:
@@ -1142,7 +1218,8 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
             ru_accepted = ru_accepted / (Nsims * thin + burn),
             rv_accepted = rv_accepted / (Nsims * thin + burn), 
             p_OV_accepted = p_OV_accepted/(Nsims * thin + burn), 
-            p_OP_accepted = p_OP_accepted/(Nsims * thin + burn)            
+            p_OP_accepted = p_OP_accepted/(Nsims * thin + burn), 
+            timings = timings
             )
   
   if (any_X_miss) {
@@ -1152,7 +1229,14 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
     r$Ws <- Ws
   }
   
+  cat("Timing summary (seconds):\n")
+  total_time <- sum(unlist(timings))
+  timing_pct <- round(100 * unlist(timings) / total_time, 1)
+  print(timing_pct)
+  
+  
   return(r)
+  
   
 }
 
