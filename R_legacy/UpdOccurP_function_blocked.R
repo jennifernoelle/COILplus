@@ -1,7 +1,5 @@
 # Blocked sampler using
 # Occurrence and probability are sampled independently and then jointly accepted or rejected
-# This version corrects bug in asymmetric proposal correction
-# To do later: think about good default switch probabilities
 
 
 #' @param detected Matrix. Rows are species, columns are studies. Indicator of
@@ -32,21 +30,6 @@
 #' 
 #' 
 
-# # For line by line debugging
-# mh_p_step = 0.1
-# mh_pprior_sd = 0.1 
-# p_1to0 = 0.65
-# p_0to1 = 0.25
-# p_curr
-# occ_curr
-# occur_prior_probs
-# probobs_curr
-# probobs_others
-# occur_others
-# curr_inter
-# focus
-
-
 UpdOccurP_blocked  <- function(mh_p_step = mh_p_step, mh_pprior_sd = mh_pprior_sd, 
                              p_1to0 = p1to0, p_0to1 = p_0to1, 
                              p_curr, occ_curr,
@@ -59,9 +42,6 @@ UpdOccurP_blocked  <- function(mh_p_step = mh_p_step, mh_pprior_sd = mh_pprior_s
   num_obs <- nrow(p_curr) # number of species of this type
   num_studies <- ncol(p_curr)
   pipj <- outer(probobs_curr, probobs_others)
-  
-  # # Don't replace occurrence indicators for species that were actually detected
-  # detected <- t(apply(A,2, function(x) colSums(x) > 0))*1 # species are rows as in curr_inter
   
   # Set up storage
   accepted = matrix(0, nrow = num_obs, ncol = num_studies)

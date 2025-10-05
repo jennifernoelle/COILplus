@@ -1,8 +1,3 @@
-# Simulate frugivory data given 
-# nS - studies
-# nM - mammal species
-# nP - plant species
-# mh_pprior_sd - sd for sampling input probs from their priors
 
 library(truncnorm)
 library(mvtnorm)

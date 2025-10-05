@@ -1,9 +1,6 @@
-# This versions tests out the *alt version of the blocked sampler which corrects possible issue in asymmetric proposal
-# And also saves unthinned quantities of interest for traceplots including logL
-
 
 #' MCMC for bipartite network model with trait information and unrecorded
-#' interactions
+#' interactions: includes updating of occurrence probabilities
 #' 
 #' Perform MCMC to acquire samples from the posterior distribution of model
 #' parameters for a model for the true interaction matrix among different sets
@@ -241,23 +238,19 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
   vs <- array(NA, dim = c(Nsims, use_H))  # Stick breaking prior for shrinking variance.
   omegas <- array(NA, dim = c(Nsims, use_H))  # Length of broken sticks.
   zs <- array(NA, dim = c(Nsims, use_H))  # Which stick break the H components belong to.
-  #pis <- array(NA, dim = c(Nsims, nB))  # Probabilities of observing bird.#TRIM
-  pi_cumsum <- rep(0, nB) #TRIM
+  pi_cumsum <- rep(0, nB) 
   pi_accepted <- rep(0, nB)  # Number of MCMC iterations for which the bird proposal was accepted.
-  #pjs <- array(NA, dim = c(Nsims, nP))  # Probabilities of observing plant.#TRIM
   pj_accepted <- rep(0, nP)  # Number of MCMC iterations for which the plant proposal was accepted.
-  pj_cumsum <- rep(0, nP) #TRIM
+  pj_cumsum <- rep(0, nP) 
   sigmasq_pB <- rep(NA, Nsims)  # Residual variance, observing bird.
   sigmasq_pP <- rep(NA, Nsims)  # Residual variance, observing plant.
  
   p_OV_accepted <- array(0, dim = c(nB,nstudies)) # Number of MCMC iteractions for which for bird occurrence prob proposal was accepted
   p_OV_cumsum <- array(0, dim = c(nB, nstudies))
   occP_B_accepted <- array(0, dim = c(nB, nstudies))
-  #p_OVs <- array(NA, dim = c(Nsims, nB, nstudies)) # Trim this after debugging
   p_OP_accepted <- array(0, dim = c(nP,nstudies)) # Number of MCMC iteractions for which for plant occurrence prob proposal was accepted
   p_OP_cumsum <- array(0, dim = c(nP, nstudies))
   occP_P_accepted <- array(0, dim = c(nP, nstudies))
-  #p_OPs <- array(NA, dim = c(Nsims, nP, nstudies)) # Trim this after debugging
   OV_cumsum <- array(0, dim = c(nB, nstudies))
   OP_cumsum <- array(0, dim = c(nP, nstudies))
   
@@ -377,15 +370,14 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
   # If the starting values have been specified in start_values, use those. 
   # ERROR: START VALUES ARE NAMED WRONG BY DEFAULT AND WON'T BE USED
   # If you don't sample, they will just be fixed at the random initialization above
-  # I didn't correct, I just renamed my list of start values
+  # Rename start values to be consistent with analysis code for them to work
   if (!is.null(start_values)) {
     for (pp in 1 : length(start_values)) {
       assign(x = names(start_values)[pp], start_values[[pp]])
     }
   }
   
-  this_Su <- this_ru * Cu + (1 - this_ru) * diag(nB) # DEBUG: THIS ISN'T ACTUALLY USING START VALUES IF THEY'RE SET AS IN DOCUMENTATION
-  this_Sv <- this_rv * Cv + (1 - this_rv) * diag(nP)
+  this_Su <- this_ru * Cu + (1 - this_ru) * diag(nB) 
   
   # If we do not perform bias correction, change the starting values:
   if (!bias_cor) {
@@ -832,15 +824,7 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
                              focus = focus)
         
       }
-      
-      # # Line by line debugging
-      # detected = detected_B
-      # occur = occur_B # occurrence probabilities
-      # occur_others = this_O_P
-      # probobs_curr = this_pi
-      # probobs_others = this_pj
-      # curr_inter = this_L
-      # focus = focus
+
       
       if (sampling$O_P){
         
@@ -857,8 +841,6 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       
       if (sampling$O_V | sampling$O_P) {  # If updated, update derived quantities
         
-        # this_O <- as.numeric(do.call(abind::abind, c(lapply(seq(nstudies), function(ss)
-        #   outer(this_O_V[,ss], this_O_P[,ss])), along = 3)))
         this_O <- do.call(abind::abind, c(lapply(seq(nstudies), function(ss)
           outer(this_O_V[,ss], this_O_P[,ss])), along = 3))
         
@@ -971,8 +953,6 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       # Update computed quantities
       if (sampling$O_V | sampling$O_P) {  # If updated, update derived quantities
         
-        # this_O <- as.numeric(do.call(abind::abind, c(lapply(seq(nstudies), function(ss)
-        #   outer(this_O_V[,ss], this_O_P[,ss])), along = 3)))
         this_O <- do.call(abind::abind, c(lapply(seq(nstudies), function(ss)
           outer(this_O_V[,ss], this_O_P[,ss])), along = 3))
         
@@ -1061,12 +1041,9 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       OV_mean <- OV_cumsum/keep_index
       OP_cumsum <- OP_cumsum + this_O_P
       OP_mean <- OP_cumsum/keep_index
-        
-      #p_OVs[keep_index, , ] <- this_occur_B # trim after debugging
-      #p_OPs[keep_index, , ] <- this_occur_P
+  
       
       Ls[keep_index, , ] <- this_L
-      #pL1s[keep_index, , ] <- this_pL1 #TRIM
       mod_pL1s[keep_index, , ] <- this_mod_pL1
       
       lambdas[keep_index, ] <- this_lambda
@@ -1083,17 +1060,10 @@ MCMC <- function(obs_A, focus, p_occur_V, p_occur_P, obs_X, obs_W, Cu, Cv,
       sigmasq_pP[keep_index] <- this_sigmasq_pP
       deltas[keep_index, ] <- this_delta
       zetas[keep_index, ] <- this_zeta
-      #Us[keep_index, , ] <- this_U #TRIM
-      #Vs[keep_index, , ] <- this_V #TRIM
       vs[keep_index, ] <- this_v
       omegas[keep_index, ] <- this_omega
       zs[keep_index, ] <- this_z
       thetas[keep_index, ] <- this_theta
-      #pis[keep_index, ] <- this_pi #TRIM
-      #pjs[keep_index, ] <- this_pj #TRIM
-      # rU[keep_index] <- this_ru
-      # rV[keep_index] <- this_rv
-      # 
       if (any_X_miss) {
         for (jj in 1 : sum(pB)) {
           Xs[[jj]][keep_index, ] <- this_X[miss_X_ind[[jj]], jj]

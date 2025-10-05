@@ -6,13 +6,10 @@
 ncores <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK")) - 1
 use_parallel <- TRUE
 
-# The directory where the analysis is performed: should already be your WD if you cloned the repo
-wd_path <- "/hpc/group/dunsonlab/jkampe/COILplus"
-setwd(wd_path)
 
 data_path <- 'ProcessedData/'
 save_plots_path <- 'Results/'
-source_path <- 'R/'
+source_path <- 'R_fast/'
 
 
 # Save results using convention: res_date_i.rda
@@ -128,12 +125,12 @@ mod_pL1s <- mod_pL1s[keep_idx, , ]
 
 t1 <- Sys.time()
 if(use_parallel){
-  trait_match <- TraitMatching3_parallel(B = B, mod_pL1s = mod_pL1s,
+  trait_match <- TraitMatching_parallel(B = B, mod_pL1s = mod_pL1s,
                                          Xs = NULL, Ws = NULL,  # Imputed values not used.
                                          obs_X = obs_X, obs_W = obs_W, obs_only = TRUE, 
                                          ncores = ncores)
 }else{
-  trait_match <- TraitMatching3(B = B, mod_pL1s = mod_pL1s,
+  trait_match <- TraitMatching(B = B, mod_pL1s = mod_pL1s,
                                 Xs = NULL, Ws = NULL,  # Imputed values not used.
                                 obs_X = obs_X, obs_W = obs_W, obs_only = TRUE)
   

@@ -1,7 +1,35 @@
+#' Trait matching for species interactions (parallelized): adds signed correlation
+#' Fitting univariate regressions of the logit of fitted interaction
+#' probability values on covariates and using permutation to get their
+#' distribution under the null of no association.
+#' 
+#' @param B Numeric. Number of times to perform the resampling. Default is 500.
+#' @param mod_pL1s Posterior samples for the fitted probabilities of the
+#' interaction model. Returned by the function MCMC.
+#' @param Xs Posterior samples of imputed values for the covariates of the
+#' first set of species. Returned by the function MCMC. Should be a list of 
+#' length equal to the number of covariates, each element should have rows equal
+#' to the number of posterior samples across all chains, and columns equal to 
+#' the number of missing observations for that covariate.
+#' @param Ws Posterior samples of imputed values for the covariates of the
+#' second set of species. Returned by the function MCMC.
+#' @param obs_X The design matrix of covariates for the first set of species.
+#' Number of rows is number of species and number of columns is number of
+#' covariates.
+#' @param obs_W The design matrix of covariates for the second set of species.
+#' Number of rows is number of species and number of columns is number of
+#' covariates.
+#' @param obs_only Logical. If set to TRUE only the observations with observed
+#' covariate values will be used. Defaults to FALSE.
+#' 
+#' @export
+#' 
+#' 
+
 library(doParallel)
 library(foreach)
 
-TraitMatching3_parallel <- function(B = 500, mod_pL1s, Xs, Ws, obs_X, obs_W, obs_only = FALSE, 
+TraitMatching_parallel <- function(B = 500, mod_pL1s, Xs, Ws, obs_X, obs_W, obs_only = FALSE, 
                                     ncores) {
   #ncores <- parallel::detectCores() - 1
   cl <- makeCluster(ncores)

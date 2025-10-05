@@ -1,5 +1,4 @@
-#' Trait matching for species interactions
-#' 
+#' Trait matching for species interactions: adds signed correlation
 #' Fitting univariate regressions of the logit of fitted interaction
 #' probability values on covariates and using permutation to get their
 #' distribution under the null of no association.
@@ -26,10 +25,8 @@
 #' @export
 #' 
 #' 
-#' TO DO: for looking at the signs, it might make more sense to compute the mean over 
-#' mcmc samples and show the distribution over species
 #' 
-TraitMatching3 <- function(B = 500, mod_pL1s, Xs, Ws, obs_X, obs_W,
+TraitMatching <- function(B = 500, mod_pL1s, Xs, Ws, obs_X, obs_W,
                            obs_only = FALSE) {
   
   Nsims <- dim(mod_pL1s)[1]

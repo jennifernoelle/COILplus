@@ -4,14 +4,9 @@
 # --------- TO DO: set  your directories and name the current results files using the date ---------#
 
 # The directory where the analysis is performed: should already be your WD if you cloned the repo
-# wd_path<- "/hpc/group/dunsonlab/jkampe/African-Frugivory-V3"
-# setwd(wd_path)
-
 
 data_path <- 'ProcessedData/'
 save_plots_path <- 'Results/'
-source_path <- 'R/'
-
 
 # Save results using convention: res_date_i.rda
 date <- 'COILp_exp'
