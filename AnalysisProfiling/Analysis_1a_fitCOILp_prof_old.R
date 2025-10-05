@@ -19,7 +19,7 @@ data_path <- 'ProcessedData/'
 # Where you want to save MCMC results:
 save_path_base <- 'Results/' # Crete this directory
 # Where the functions are available:
-source_path <- 'R_faster/'
+source_path <- 'R/'
 
 # Create the results folder
 ifelse(!dir.exists(file.path(save_path_base, date)), dir.create(file.path(save_path_base, date)), FALSE)
@@ -148,6 +148,9 @@ cut_feed = FALSE
 save_logL = TRUE
 save_rhos = FALSE
 
+Sys.setenv(OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", MKL_NUM_THREADS="1", BLIS_NUM_THREADS="1")
+
+time_start <- Sys.time()
 res <- MCMC_old(obs_A, focus = obs_F, p_occur_V = O_V, p_occur_P = O_P, obs_X, obs_W, Cu, Cv,
                 Nsims, burn, thin, use_H = 10, use_shrinkage = TRUE,
                 bias_cor = TRUE, theta_inf = 0.01,
@@ -159,6 +162,7 @@ res <- MCMC_old(obs_A, focus = obs_F, p_occur_V = O_V, p_occur_P = O_P, obs_X, o
                 sampling = sampling, cut_feed = FALSE, 
                 #block_sampleOccP = block_sampleOccP, 
                 save_logL = TRUE)
+Sys.time() - time_start
 
 
 

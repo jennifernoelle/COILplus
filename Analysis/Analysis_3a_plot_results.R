@@ -1,12 +1,7 @@
-# File to plot results for cv and full run
-# Includes new code to plot trace quantities and investigate occurrences
-# This version is to examine the primary results, which sample occurrence probs
-# Use the compare_results file to look at all results
+# File to plot results for cv and full run for a single experiment
 
 # --------- TO DO: set  your directories and name the current results files using the date ---------#
 
-
-# UPDATE IN PROGRESS
 
 # Save results using convention: res_date_i.rda
 date <- 'COILp_exp'
@@ -15,8 +10,6 @@ date <- 'COILp_exp'
 data_path <- 'ProcessedData/'
 # Where you want to save MCMC results:
 save_path_base <- 'Results/' # Crete this directory
-# Where the functions are available:
-source_path <- 'R/'
 # Where the results are saved: 
 results_path <- paste0('Results/', date, '/')
 
@@ -151,7 +144,7 @@ mean_pred_na[comb_A == 1] <- NA
 
 
 # Save the posterior network 
-#write.csv(mean_pred, paste0(results_path, "post_network", date, ".csv"))
+write.csv(mean_pred, paste0(results_path, "post_network", date, ".csv"))
 
 #-------------------- STEP 2: POSTERIOR NETWORK SUMMARY -----------------------------#
 
@@ -168,15 +161,41 @@ sum(comb_A)
 sum(mean_pred == 1)
 mean(mean_pred[comb_A == 1])
 
-#write.csv(mean_pred, paste0(results_path, "post_network", date, ".csv"))
-
-sum(comb_A) # observed interactions
+# Look at new interactions
 sum(comb_A) /length(comb_A)
 sum(mean_pred_na > 0.5, na.rm = TRUE) # likely non-observed interactions
 sum(mean_pred_na > 0.75, na.rm = TRUE) # v likely non-observed interactions
 
 
+# Look at the relative increase in posterior prevalence vs observed prevalence
+pp75 <- sum(mean_pred > 0.75)/length(mean_pred)
+pp50 <- sum(mean_pred > 0.50)/length(mean_pred)
+op <- sum(comb_A ==1)/length(comb_A)
+(pp75 - op)/op # % increase in interactions at 75% threshold
+(pp50 - op)/op
 
+# Count number of focal studies for each species
+fV <- rowSums(obs_F)
+fP <- apply(obs_F, 2, sum)
+
+# Count number of observed interactions for each species
+aV <- rowSums(comb_A)
+aP <- colSums(comb_A)
+
+# Count the number of high posterior probability interactions for each species
+p75V <- apply(mean_pred, 1, function(x) sum(x > 0.75))
+p50V <- apply(mean_pred, 1, function(x) sum(x > 0.5))
+p75P <- apply(mean_pred, 2, function(x) sum(x > 0.75))
+p50P <- apply(mean_pred, 2, function(x) sum(x > 0.5))
+
+# Make sure they match
+sum(names(fV)!= names(aV))
+sum(names(fP)!= names(aP))
+
+# Look at correlation between study intensity and observed interactions: vertebrates
+cor(fV, aV) # Observed correlation
+cor(fV, p75V) # Correlation with posterior probs, P > 75%
+cor(fV, p50V) # Correlation with posterior probs, P > 50%
 
 # ----------------- STEP 3: PLOTTING THE HEATMAP ----------------------------#
 

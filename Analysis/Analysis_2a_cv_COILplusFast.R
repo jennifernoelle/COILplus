@@ -1,11 +1,11 @@
-# Performs 10-fold CV with COIL default occurrence probabilities
+# Performs 10-fold CV with COIL+
 
 # --------- TO DO: set  your directories and name the current results files using the date ---------#
 
 # The directory where the analysis is performed: should already be your WD if you cloned the repo
 
 # Save results using convention: res_date_i.rda
-date <- 'COIL_default'
+date <- 'COILp_exp'
 
 # Where the processed data are saved:
 data_path <- 'ProcessedData/'
@@ -60,10 +60,6 @@ load(paste0(data_path, 'OV_full.dat')) # site level obs vertebrates
 Cu <- Cu_sorted
 Cv <- Cv_sorted
 
-# This version uses 0/100 occurrence probabilities
-O_P <- ifelse(O_P == 1, 1, 0)
-O_V <- ifelse(O_V ==1, 1, 0)
-
 # Getting the combined network for the interactions recorded in any study
 comb_A <- apply(obs_A, c(1, 2), sum)
 comb_A <- (comb_A > 0) * 1
@@ -99,7 +95,7 @@ sampling <- list(L = TRUE, lambda = TRUE, tau = TRUE, beta = TRUE,
                  delta = TRUE, zeta = TRUE, U = TRUE, V = TRUE, v = TRUE,
                  z = TRUE, theta = TRUE, pis = TRUE, pjs = TRUE, rU = TRUE,
                  rV = TRUE, miss_X = TRUE, miss_W = TRUE, O_V = TRUE,
-                 O_P = TRUE, p_OV = FALSE, p_OP = FALSE)
+                 O_P = TRUE, p_OV = TRUE, p_OP = TRUE)
 
 start_values <- NULL
 bias_cor <- TRUE 

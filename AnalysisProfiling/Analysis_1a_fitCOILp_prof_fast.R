@@ -19,7 +19,7 @@ data_path <- 'ProcessedData/'
 # Where you want to save MCMC results:
 save_path_base <- 'Results/' # Crete this directory
 # Where the functions are available:
-source_path <- 'R_faster/'
+source_path <- 'R_fast/'
 
 # Create the results folder
 ifelse(!dir.exists(file.path(save_path_base, date)), dir.create(file.path(save_path_base, date)), FALSE)
@@ -36,11 +36,10 @@ library(truncnorm)
 library(BayesLogit)
 library(mvnfast)
 
+# Unchanged functions
 source(paste0(source_path, 'UpdExtraVar_function.R'))
 source(paste0(source_path, 'UpdTraitCoef_function.R'))
 source(paste0(source_path, 'UpdProbObs_function.R'))
-source(paste0(source_path, 'UpdOccur_function.R'))
-source(paste0(source_path, 'UpdOccurP_function.R'))
 source(paste0(source_path, 'UpdRho_function.R'))
 source(paste0(source_path, 'OmegaFromV_function.R'))
 source(paste0(source_path, 'useful_functions.R'))
@@ -49,19 +48,15 @@ source(paste0(source_path, 'PredictInteractions_function.R'))
 source(paste0(source_path, 'GetPredLatFac_function.R'))
 source(paste0(source_path, 'GetPredWeights_function.R'))
 
-source(paste0(source_path, 'MCMC_faster.R'))
-# source(paste0(source_path, 'MCMC_with_timing.R')) # Old version with timing
-
-# Updated functions
-# Rcpp::sourceCpp(paste0(source_path, "rowwise_prod.cpp"))
-# Rcpp::sourceCpp(paste0(source_path, "row_logprod_mask.cpp"))
+# Updated fast functions
 Rcpp::sourceCpp(paste0(source_path, "row_logprod_mask_idx_slice.cpp"))
-#source(paste0(source_path, 'UpdLatFac_function.R'))
-source(paste0(source_path, 'UpdLatFac_function_faster2.R'))
-#source(paste0(source_path, 'UpdOccurP_function_blocked.R'))
-source(paste0(source_path, 'UpdOccurP_function_blocked_parallel.R'))
-source(paste0(source_path, 'UpdOccurP_function_blocked_timing_v2.R'))
+source(paste0(source_path, 'UpdLatFac_function_fast.R'))
+source(paste0(source_path, 'UpdOccurP_function_blocked_fast.R'))
 source(paste0(source_path, 'Utils_OccurP.R')) # added fast_loglik
+source(paste0(source_path, 'UpdOccur_function_fast.R'))
+source(paste0(source_path, 'MCMC_fast.R'))
+
+
 
 # Loading the data:
 load(paste0(data_path, 'Cu_phylo_sorted.dat'))
@@ -150,9 +145,9 @@ save_logL = TRUE
 save_rhos = FALSE
 
 Sys.setenv(OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", MKL_NUM_THREADS="1", BLIS_NUM_THREADS="1")
-ncores <- 6
-use_parallel <- FALSE
 
+
+time_start <- Sys.time()
 res <- MCMC(obs_A, focus = obs_F, p_occur_V = O_V, p_occur_P = O_P, 
             obs_X = obs_X, obs_W, Cu = Cu, Cv = Cv,
                 Nsims = Nsims, burn = burn, thin = thin,
@@ -165,8 +160,9 @@ res <- MCMC(obs_A, focus = obs_F, p_occur_V = O_V, p_occur_P = O_P,
                 prior_sigmasq = c(1, 1), start_values = NULL,
                 sampling = sampling, cut_feed = FALSE, 
                 #block_sampleOccP = block_sampleOccP, 
-                save_logL = TRUE
+                save_logL = TRUE, profile = TRUE
             )
+Sys.time() - time_start
 
 
 

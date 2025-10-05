@@ -48,7 +48,7 @@ UpdLatFac <- function(latfac, latfac_others,
                       obs_covs, omega_obs_covs, num_covs, coefs_covs,
                       var_covs,
                       curr_inter, coefs_inter, omega_inter,
-                      prior_S_inv, cut_feed = FALSE) {
+                      prior_S_inv, cut_feed = FALSE, z_stream = NULL) {
   
   
   ret <- latfac
@@ -87,6 +87,11 @@ UpdLatFac <- function(latfac, latfac_others,
       mpart <- mpart + coefs_covs[jj, hh + 1] * resid / var_covs[jj]
     }
     
+    ####### debug
+    b_parts_old$cont[[hh]] <<- mpart
+    if (hh == first_bad) b_old_cont <<- mpart
+    
+    #########
     
     # Part 1(B): If bias correction is performed and the feedback is allowed, I
     # update the prior and continuous traits to include the model for the
@@ -103,6 +108,11 @@ UpdLatFac <- function(latfac, latfac_others,
       
     }
     
+    ###### debug
+    b_parts_old$bias[[hh]] <<- mpart
+    if (hh == first_bad) b_old_bias <<- mpart
+    
+    ########
     
     # NOTE: mpart and Spart are not truly means and variances because
     # I do not invert Spart_inv and I won't multiple mpart with Spart since
@@ -130,6 +140,14 @@ UpdLatFac <- function(latfac, latfac_others,
         new_S <- new_S + use_coef ^ 2 * diag(omega_obs_covs[, jj])
       }
     }
+    
+    ########## DEBUG
+    A_old_dbg[[hh]] <<- new_S   # 'new_S' currently holds A (the precision) before inversion
+    if (hh == first_bad) A_old_once <<- new_S  # precision before inversion
+    
+    ####
+    
+    
     # Inverting:
     new_S <- chol2inv(chol(new_S))
     
@@ -146,20 +164,32 @@ UpdLatFac <- function(latfac, latfac_others,
     # ----- Adding the part corresponding to the L model ------ #
     
     if (!cut_feed) {
-      # U*V array (to avoid looping over j)
-      ext_UV <- array(rep(ret[, - hh], num_obs_other),
-                      dim = c(num_obs, Hval - 1, num_obs_other))
-      ext_UV <- sweep(ext_UV, c(2, 3), FUN = '*', t(latfac_others[, - hh]))
-      
-      # Predictions excluding factor h (using sweep for computational gains):
-      pred <- sweep(ext_UV, 2, FUN = '*', coefs_inter[- c(1, hh + 1)])
-      pred <- coefs_inter[1] + apply(pred, c(1, 3), sum)
-      resid <- (curr_inter - 1 / 2) / omega_inter - pred
-      scaled_resid <- sweep(omega_inter * resid, 2, FUN = '*', latfac_others[, hh])
-      
-      # Updating the mean:
-      new_m <- new_m + coefs_inter[hh + 1] * apply(scaled_resid, 1, sum)
+      new_m <- new_m + interaction_increment_old(
+        hh, ret, latfac_others, coefs_inter, omega_inter, curr_inter
+      )
     }
+    
+    # if (!cut_feed) {
+    #   # U*V array (to avoid looping over j)
+    #   ext_UV <- array(rep(ret[, - hh], num_obs_other),
+    #                   dim = c(num_obs, Hval - 1, num_obs_other))
+    #   ext_UV <- sweep(ext_UV, c(2, 3), FUN = '*', t(latfac_others[, - hh]))
+    #   
+    #   # Predictions excluding factor h (using sweep for computational gains):
+    #   pred <- sweep(ext_UV, 2, FUN = '*', coefs_inter[- c(1, hh + 1)])
+    #   pred <- coefs_inter[1] + apply(pred, c(1, 3), sum)
+    #   resid <- (curr_inter - 1 / 2) / omega_inter - pred
+    #   scaled_resid <- sweep(omega_inter * resid, 2, FUN = '*', latfac_others[, hh])
+    #   
+    #   # Updating the mean:
+    #   new_m <- new_m + coefs_inter[hh + 1] * apply(scaled_resid, 1, sum)
+    # }
+    # 
+    #### debug
+    b_parts_old$inter[[hh]] <<- new_m
+    if (hh == first_bad) b_old_inter <<- new_m
+    
+    
     
     # ----- Adding the part corresponding to the binary covariates ------ #
     if(num_covs[2]>0){                    ######## DEBUGGING: HAD TO ADD IF STATEMENT BUT NOT WHERE IT SHOULD END
@@ -170,13 +200,36 @@ UpdLatFac <- function(latfac, latfac_others,
       new_m <- new_m +  use_coef * resid * omega_obs_covs[, jj]
       }
     }
+    
+    
+    #### DEBUG
+    b_old_dbg[[hh]] <<- new_m   # this 'new_m' is actually the RHS b (before multiplying by A^{-1})
+    b_parts_old$bin[[hh]] <<- new_m
+    if (hh == first_bad) b_old_bin <<- new_m
+    
+    
+    ####
+    
+    
+    
+
     # Multiplying with the variance:
     new_m <- new_S %*% matrix(new_m, ncol = 1)
     
     
     # Part 4: Sampling.
     
-    ret[, hh] <- mvnfast::rmvn(1, new_m, new_S)
+    #ret[, hh] <- mvnfast::rmvn(1, new_m, new_S)
+    
+    # Part 4: Sampling (use supplied normals if present). TESTING FOR CONSISTENCY
+    # new_S is the posterior covariance; new_m is the posterior mean
+    R <- chol(new_S)                                # R^T R = new_S (R is upper-tri)
+    z <- if (!is.null(z_stream)) z_stream[, hh] else rnorm(num_obs)
+    ret[, hh] <- as.numeric(new_m + t(R) %*% z)     # draw = μ + L z, with L = t(R)
+    
+    ### Debug
+    ret_cols_old[[hh]] <<- ret[, hh]
+    
     
   }
   

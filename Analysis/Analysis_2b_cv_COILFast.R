@@ -1,11 +1,11 @@
-# Performs 10-fold CV with COIL default occurrence probabilities
+# Performs 10-fold CV with COIL
 
 # --------- TO DO: set  your directories and name the current results files using the date ---------#
 
 # The directory where the analysis is performed: should already be your WD if you cloned the repo
 
 # Save results using convention: res_date_i.rda
-date <- 'COIL_default'
+date <- 'COIL_exp'
 
 # Where the processed data are saved:
 data_path <- 'ProcessedData/'
@@ -17,6 +17,7 @@ source_path <- 'R_fast/'
 # Create the results folder
 ifelse(!dir.exists(file.path(save_path_base, date)), dir.create(file.path(save_path_base, date)), FALSE)
 save_path <- paste0('Results/', date, '/')
+
 
 # ---------------------- STEP 0: Load functions, packages, data -------------- #
 
@@ -45,7 +46,6 @@ library(foreach)
 library(abind)
 library(magrittr)
 library(truncnorm)
-
 # Loading the data:
 load(paste0(data_path, 'Cu_phylo_sorted.dat'))
 load(paste0(data_path, 'Cv_phylo_sorted.dat'))
@@ -59,10 +59,6 @@ load(paste0(data_path, 'OV_full.dat')) # site level obs vertebrates
 ## Rename for convenience
 Cu <- Cu_sorted
 Cv <- Cv_sorted
-
-# This version uses 0/100 occurrence probabilities
-O_P <- ifelse(O_P == 1, 1, 0)
-O_V <- ifelse(O_V ==1, 1, 0)
 
 # Getting the combined network for the interactions recorded in any study
 comb_A <- apply(obs_A, c(1, 2), sum)
@@ -102,6 +98,7 @@ sampling <- list(L = TRUE, lambda = TRUE, tau = TRUE, beta = TRUE,
                  O_P = TRUE, p_OV = FALSE, p_OP = FALSE)
 
 start_values <- NULL
+block_sampleOccP <- FALSE
 bias_cor <- TRUE 
 
 
@@ -151,7 +148,8 @@ for(rr in 1:repetitions){
                prior_rho = c(5, 5), prior_mu0 = 0, prior_sigmasq0 = 10,
                prior_sigmasq = c(1, 1), start_values = NULL,
                sampling = sampling,
-               cut_feed = FALSE)
+               cut_feed = FALSE,
+               block_sampleOccP = block_sampleOccP)
   
   # Saving the predictions:
   pred <- apply(mcmc$Ls, c(2, 3), mean)
